@@ -458,7 +458,7 @@ class _ScanScreenState extends State<ScanScreen> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'Add the front first. A back photo and close-up help check more of the garment.',
+                    'Scan one garment at a time. Add its front first, then use the same garment for the back and close-up.',
                     style: TextStyle(color: AppColors.surface),
                   ),
                 ],
@@ -475,7 +475,7 @@ class _ScanScreenState extends State<ScanScreen> {
             _photoCard(
                 'close_up',
                 'Fabric close-up',
-                'Capture the weave or an area of visible wear.',
+                'Fill the photo with the main fabric. Include visible wear if you can.',
                 Icons.zoom_in_rounded),
             SectionCard(
               title: 'Care label (optional)',

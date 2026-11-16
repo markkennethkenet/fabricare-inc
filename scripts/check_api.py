@@ -28,9 +28,11 @@ def hashes():
     if backend == "decision_tree":
         paths.append(directory / "best_decision_tree.joblib")
     elif backend == "mobilenet":
+        from model_runtime import FabricMobileNetV2
+
         bundle = directory / "mobilenetv2_6class"
         paths.extend(bundle / name for name in (
-            "mobilenetv2_stage2_best.keras", "class_names.json"))
+            FabricMobileNetV2.filename, "class_names.json"))
     elif backend == "mobilenet_legacy":
         bundle = directory / "mobilenet_20261110"
         paths.extend(bundle / name for name in (

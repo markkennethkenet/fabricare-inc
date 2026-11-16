@@ -82,7 +82,7 @@ server modes remain available for clients that use that setting.
 The new artifacts are `model/glcm_models/glcm_svm.joblib` and
 `model/glcm_models/glcm_decision_tree.joblib`. They share 72 GLCM features from
 EXIF-corrected, padded RGB images. The SVM pipeline applies its saved scaler
-internally. The CNN uses `model/mobilenetv2_6class/mobilenetv2_stage2_best.keras`
+internally. The CNN uses `model/mobilenetv2_6class/mobilenetv2_v3_refit.keras`
 and its adjacent `class_names.json`. Scan history saves the response and
 timestamp in Hive. MySQL continues to store accounts and sessions.
 
@@ -152,14 +152,20 @@ configured local trained models and appear in History.
 
 ## Runtime protection and verification
 
-The default classifier is the supplied MobileNetV2 export in
-`model/mobilenetv2_6class/`. Keep `mobilenetv2_stage2_best.keras` with its
+The default classifier is the original-data V3 MobileNetV2 refit in
+`model/mobilenetv2_6class/`. Keep `mobilenetv2_v3_refit.keras` with its
 `class_names.json` on the backend. Each photo is corrected for EXIF orientation,
 converted to RGB, and resized with its aspect ratio preserved and gray (127)
 padding to 224 × 224. Pixel values stay in the 0–255 range for the model's
 internal rescaling layer. API scores describe the model output for the scan.
-The supplied evaluation metrics are 72.86% validation accuracy, 78.75% test
-accuracy, and 0.7821 test macro-F1.
+The refit reached 72.85% validation accuracy, 81.87% test accuracy, and
+0.8221 test macro-F1 in the V3 comparison. See the [dataset report](SIX_CLASS_DATASET.md)
+for the test split and the polyester results.
+
+Each scan accepts views of one garment. When clear photos are available, fabric
+identification uses those photos. A close-up that disagrees with the clear
+whole-garment views is excluded from fabric identification. Clear front and back
+photos with different predicted fabrics produce an uncertain result.
 
 Set `FABRIC_CLASSIFIER=decision_tree` and restart to roll back to
 `model/best_decision_tree.joblib`. The other selectable classifiers are

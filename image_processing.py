@@ -47,24 +47,27 @@ def merge_detections(detections):
 
 
 def aggregate_fabrics(predictions):
-    """Average fabric scores and abstain when the front and back disagree.
+    """Use clear views for fabric identification when available.
 
     Without model scores, select by vote and keep the score unavailable.
-    Agreeing front/back views take precedence over a dissenting close-up.
+    Clear whole-garment views take precedence over a dissenting close-up.
+    Conflicting front and back views make the fabric uncertain.
     Labels come from model/config metadata, never a fixed client class list.
     """
-    views = {p.get('view'): p for p in predictions}
+    clear = [p for p in predictions if p.get('quality', {}).get('passed', True)]
+    included = clear or predictions
+    views = {p.get('view'): p for p in included}
     front, back, detail = (views.get(view) for view in ('front', 'back', 'close_up'))
+    whole_garment = [view for view in (front, back) if view is not None]
+    disagrees = front is not None and back is not None and front['fabric_type'] != back['fabric_type']
     close_up_excluded = bool(
-        front and back and detail
-        and front.get('quality', {}).get('passed', True)
-        and back.get('quality', {}).get('passed', True)
-        and front['fabric_type'] == back['fabric_type'] != detail['fabric_type']
+        clear and detail and whole_garment and not disagrees
+        and whole_garment[0]['fabric_type'] != detail['fabric_type']
     )
-    included = [front, back] if close_up_excluded else predictions
+    if close_up_excluded:
+        included = whole_garment
     if all(p.get('score_kind') == 'unavailable' for p in included):
         votes = [p['fabric_type'] for p in included]
-        disagrees = front is not None and back is not None and front['fabric_type'] != back['fabric_type']
         return {
             'fabric_type': 'uncertain' if disagrees else max(votes, key=votes.count),
             'fabric_confidence': None,
@@ -75,7 +78,7 @@ def aggregate_fabrics(predictions):
     labels = sorted({label for prediction in included for label in prediction['probabilities']})
     averages = {label: sum(p['probabilities'].get(label, 0) for p in included) / len(included)
                 for label in labels}
-    if front and back and front['fabric_type'] != back['fabric_type']:
+    if disagrees:
         return {'fabric_type': 'uncertain', 'fabric_confidence': None,
                 'fabric_probabilities': averages, 'fabric_close_up_excluded': False,
                 'fabric_uncertainty_reason': 'front_back_disagree'}

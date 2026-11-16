@@ -44,7 +44,21 @@ class ImageProcessingTests(unittest.TestCase):
         self.assertEqual(result['fabric_confidence'], 53.5)
         self.assertTrue(result['fabric_close_up_excluded'])
         predictions[1]['quality'] = {'passed': False}
-        self.assertFalse(aggregate_fabrics(predictions)['fabric_close_up_excluded'])
+        for views in (predictions, [predictions[0], predictions[2]]):
+            result = aggregate_fabrics(views)
+            self.assertTrue(result['fabric_close_up_excluded'])
+            self.assertEqual(result['fabric_confidence'], 55)
+
+    def test_blurry_optional_photo_does_not_override_clear_front(self):
+        predictions = [
+            {'view': 'front', 'fabric_type': 'cotton',
+             'probabilities': {'cotton': .62, 'linen': .38}, 'quality': {'passed': True}},
+            {'view': 'back', 'fabric_type': 'linen',
+             'probabilities': {'cotton': .01, 'linen': .99}, 'quality': {'passed': False}},
+        ]
+        result = aggregate_fabrics(predictions)
+        self.assertEqual(result['fabric_type'], 'cotton')
+        self.assertEqual(result['fabric_confidence'], 62)
 
     def test_disagreeing_front_and_back_are_uncertain_even_with_a_majority(self):
         predictions = [

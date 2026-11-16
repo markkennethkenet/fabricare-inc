@@ -196,13 +196,19 @@ def main():
     candidate = refit('with new polyester',np.concatenate([train_x,extra]),
                       np.concatenate([train_y,np.full(extra_count,POLY,dtype=np.int32)]),valid_x,valid_y,initial)
     scores = {}
+    refit_path = args.output / 'mobilenetv2_v3_refit.keras'
     for name, weights in [('current_scanner',initial),('original_only_refit',control[2]),('with_new_polyester',candidate[2])]:
         classifier.set_weights(weights)
         scores[name] = np.asarray(classifier(test_x))
+        if name == 'original_only_refit':
+            baseline.save(refit_path)
     model_path=args.output/'mobilenetv2_polyester_candidate.keras'
     baseline.save(model_path)
     reopened=tf.keras.models.load_model(model_path,compile=False)
     np.testing.assert_allclose(np.asarray(reopened.get_layer('dense')(test_x)),scores['with_new_polyester'],atol=1e-7)
+    reopened_refit = tf.keras.models.load_model(refit_path, compile=False)
+    np.testing.assert_allclose(np.asarray(reopened_refit.get_layer('dense')(test_x)),
+                               scores['original_only_refit'], atol=1e-7)
     mask=test_y==POLY
     old_correct=scores['current_scanner'][mask].argmax(axis=1)==POLY
     new_correct=scores['with_new_polyester'][mask].argmax(axis=1)==POLY
@@ -219,6 +225,7 @@ def main():
         'test':{name:score_summary(test_y,result) for name,result in scores.items()},
         'paired_polyester_test':{'gained':gained,'lost':lost,'exact_p':binomtest(gained,gained+lost,0.5).pvalue if gained+lost else 1.0},
         'candidate_sha256':hashlib.sha256(model_path.read_bytes()).hexdigest(),
+        'original_only_refit_sha256': hashlib.sha256(refit_path.read_bytes()).hexdigest(),
     }
     (args.output/'results.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     for name,r in report['test'].items():

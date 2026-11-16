@@ -298,6 +298,10 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                 result.fabricUncertain
                     ? 'The photos give conflicting fabric results.'
                     : '${result.fabricType}${scoreText == null ? '' : ' — $scoreText% model score'}',
+                if (result.fabricUncertain)
+                  'Retake the front and back of one garment. Scan other garments separately.',
+                if (result.analysis['fabric_close_up_excluded'] == true)
+                  'The close-up suggested a different fabric. Identification used the clear front or back photos.',
                 if (needsConfirmation) 'Needs confirmation',
               ]),
             ),

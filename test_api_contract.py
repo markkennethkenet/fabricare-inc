@@ -57,7 +57,7 @@ class ApiContractTests(unittest.TestCase):
     def test_selected_models_run_real_inference_on_a_fabric_photo(self):
         photo = Path(__file__).parent / 'model' / '2b2a6f82-68e1-4d0f-ad22-a011dd8df367.jpg'
         expected = {
-            'cnn': 'MobileNetV2 (six fabrics)',
+            'cnn': 'MobileNetV2 (V3 refit)',
             'svm': 'GLCM + SVM',
             'glcm_dt': 'GLCM + Decision Tree',
         }

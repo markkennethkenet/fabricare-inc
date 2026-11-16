@@ -169,14 +169,15 @@ def prepare_mobilenet_v2_image(image_source):
 
 
 class FabricMobileNetV2:
-    name = "MobileNetV2 (six fabrics)"
-    validation_accuracy = 72.86
-    test_accuracy = 78.75
-    test_macro_f1 = 0.7821
+    name = "MobileNetV2 (V3 refit)"
+    filename = "mobilenetv2_v3_refit.keras"
+    validation_accuracy = 72.85
+    test_accuracy = 81.87
+    test_macro_f1 = 0.8221
 
     def __init__(self, directory):
         labels_path = directory / "class_names.json"
-        model_path = directory / "mobilenetv2_stage2_best.keras"
+        model_path = directory / self.filename
         for path in (labels_path, model_path):
             if not path.is_file():
                 raise FileNotFoundError(f"Missing MobileNetV2 file: {path.name}.")
