@@ -77,6 +77,8 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: ScanScreen()));
     expect(find.text('Front photo'), findsOneWidget);
     expect(find.text('Required'), findsOneWidget);
+    expect(find.text('Back photo'), findsNothing);
+    expect(find.text('Fabric close-up'), findsNothing);
     expect(find.text('Add a front photo to continue.'), findsOneWidget);
     expect(
         tester

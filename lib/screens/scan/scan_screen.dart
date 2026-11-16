@@ -26,6 +26,7 @@ class _ScanScreenState extends State<ScanScreen> {
   final _quality = <String, Map<String, dynamic>>{};
   final _picker = ImagePicker();
   bool _busy = false;
+  int _requestedViews = 1;
   String _modelType = 'cnn';
   String _status = '';
   String _condition = 'unspecified';
@@ -171,6 +172,7 @@ class _ScanScreenState extends State<ScanScreen> {
       ]));
 
   Future<void> _pick(String view, ImageSource source) async {
+    if (_busy) return;
     try {
       final photo = await _picker.pickImage(
           source: source, imageQuality: 85, maxWidth: 1920, maxHeight: 1920);
@@ -178,11 +180,37 @@ class _ScanScreenState extends State<ScanScreen> {
       setState(() {
         _images[view] = ScanImage(view: view, path: photo.path);
         _quality.remove(view);
+        if (view == 'front') {
+          _images.remove('back');
+          _images.remove('close_up');
+          _quality.clear();
+          _requestedViews = 1;
+        }
+        _busy = true;
+        _status = 'Checking focus, light, and framing...';
+      });
+      final checks = await FabricCareApiService.instance.checkQuality([
+        for (final name in _views)
+          if (_images.containsKey(name)) _images[name]!,
+      ]);
+      if (!mounted) return;
+      setState(() {
+        for (final check in checks) {
+          _quality[check['view'] as String] =
+              Map<String, dynamic>.from(check['quality'] as Map);
+        }
       });
     } catch (_) {
       if (mounted) {
-        _message('Could not access the camera or gallery. Try again.');
+        _message(
+            'Could not finish the capture check. Check the API connection and try again.');
       }
+    } finally {
+      if (mounted)
+        setState(() {
+          _busy = false;
+          _status = '';
+        });
     }
   }
 
@@ -244,12 +272,43 @@ class _ScanScreenState extends State<ScanScreen> {
             false;
         if (!override || !mounted) return;
       }
-      setState(() => _status = 'Analyzing fabric and visible damage...');
+      setState(
+          () => _status = 'Comparing fabric models and checking for damage...');
       step = 'analyzing the photos';
       final response = await api.analyzeImages(images,
           allowLowQuality: override,
           modelType: _modelType,
           userInputs: _userInputs);
+      if (!mounted) return;
+      if ((response.json['fabric_needs_confirmation'] == true ||
+              response.fabricType == 'uncertain') &&
+          !override &&
+          images.length == _requestedViews &&
+          _requestedViews < 3) {
+        final nextView = _views[_requestedViews];
+        final addPhoto = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Fabric needs another look'),
+            content: Text(nextView == 'back'
+                ? 'The front photo did not give a confident identification. Add the back of the same garment in even light.'
+                : 'The fabric is still uncertain. Take a sharp close-up of its main material, away from labels and trim.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('View provisional result')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Add next photo')),
+            ],
+          ),
+        );
+        if (!mounted || addPhoto == null) return;
+        if (addPhoto) {
+          setState(() => _requestedViews++);
+          return;
+        }
+      }
       step = 'saving scan history';
       final result = await AppData.instance.addAnalysis(images, response,
           userInputs: _userInputs, expectedUserId: accountId);
@@ -324,10 +383,9 @@ class _ScanScreenState extends State<ScanScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (photo == null)
-            Text(description,
-                style: theme.bodySmall?.copyWith(color: AppColors.inkSoft))
-          else
+          Text(description,
+              style: theme.bodySmall?.copyWith(color: AppColors.inkSoft)),
+          if (photo != null)
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.file(
@@ -343,7 +401,7 @@ class _ScanScreenState extends State<ScanScreen> {
             const SizedBox(height: 8),
             Text(
               quality['passed'] == true
-                  ? 'Quality check passed'
+                  ? 'Focus and lighting check passed. You can analyze this photo.'
                   : quality['reason'] as String,
               style: theme.bodySmall?.copyWith(
                 color: quality['passed'] == true
@@ -351,6 +409,11 @@ class _ScanScreenState extends State<ScanScreen> {
                     : AppColors.danger,
               ),
             ),
+            if (quality['framing_hint'] case final String hint)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(hint, style: theme.bodySmall),
+              ),
           ],
           const SizedBox(height: 9),
           Wrap(
@@ -375,6 +438,11 @@ class _ScanScreenState extends State<ScanScreen> {
                       : () => setState(() {
                             _images.remove(view);
                             _quality.remove(view);
+                            if (view == 'front') {
+                              _images.clear();
+                              _quality.clear();
+                              _requestedViews = 1;
+                            }
                           }),
                   child: const Text('Remove'),
                 ),
@@ -445,12 +513,16 @@ class _ScanScreenState extends State<ScanScreen> {
                     ],
                   ),
                   Text(
-                    '${_images.length} of 3 photos added',
+                    'Step 1 Capture / Step 2 Check / Step 3 Analyze',
                     style: const TextStyle(color: Color(0xFFE7EDDC)),
                   ),
                   const SizedBox(height: 8),
                   LinearProgressIndicator(
-                    value: _images.length / _views.length,
+                    value: _quality['front']?['passed'] == true
+                        ? 2 / 3
+                        : hasFront
+                            ? 1 / 3
+                            : 0,
                     color: const Color(0xFFC6D6AD),
                     backgroundColor: const Color(0xFF5A705E),
                     borderRadius: BorderRadius.circular(4),
@@ -458,25 +530,30 @@ class _ScanScreenState extends State<ScanScreen> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'Scan one garment at a time. Add its front first, then use the same garment for the back and close-up.',
+                    'Start with one garment’s front. We check focus and lighting after capture. Tap Analyze garment when ready; extra views are requested only if identification needs another look.',
                     style: TextStyle(color: AppColors.surface),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 14),
-            _photoCard('front', 'Front photo', 'Keep the full front in frame.',
+            _photoCard(
+                'front',
+                'Front photo',
+                'Use even lighting, keep one garment in frame, and move until its fabric is clear. Hold steady while the camera focuses.',
                 Icons.checkroom_outlined),
-            _photoCard(
-                'back',
-                'Back photo',
-                'Turn the garment over to check the other side.',
-                Icons.flip_camera_android_outlined),
-            _photoCard(
-                'close_up',
-                'Fabric close-up',
-                'Fill the photo with the main fabric. Include visible wear if you can.',
-                Icons.zoom_in_rounded),
+            if (_requestedViews >= 2)
+              _photoCard(
+                  'back',
+                  'Back photo',
+                  'Turn the garment over to check the other side.',
+                  Icons.flip_camera_android_outlined),
+            if (_requestedViews >= 3)
+              _photoCard(
+                  'close_up',
+                  'Fabric close-up',
+                  'Fill the photo with the main fabric. Include visible wear if you can.',
+                  Icons.zoom_in_rounded),
             SectionCard(
               title: 'Care label (optional)',
               icon: Icons.sell_outlined,

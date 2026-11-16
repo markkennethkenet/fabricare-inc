@@ -95,6 +95,7 @@ class FabricCareApiService {
       Map<String, dynamic> userInputs = const {}}) async {
     final body = await _upload('/predict/hybrid', images, fields: {
       'allow_low_quality': allowLowQuality.toString(),
+      'ai_assist': 'true',
       if (modelType != null) 'model_type': modelType,
       'user_inputs': jsonEncode(userInputs)
     });
@@ -114,13 +115,17 @@ class FabricCareApiService {
 
   Future<Map<String, dynamic>> reviewDamage(
       ScanResult scan, Map<String, bool> decisions) async {
+    final secondStatus = scan.section('fabric_second_opinion')['status'];
     final response = await http
         .post(
           Uri.parse('${ApiConfig.baseUrl}/review-damage'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'fabric_type': scan.fabricType,
-            'fabric_confidence': scan.analysis['fabric_confidence'],
+            'fabric_confidence':
+                secondStatus == 'disagrees' || secondStatus == 'inconclusive'
+                    ? null
+                    : scan.analysis['fabric_confidence'],
             'detector_available':
                 scan.section('condition_assessment')['detector_available'] ??
                     true,

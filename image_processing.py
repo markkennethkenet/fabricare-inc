@@ -1,5 +1,6 @@
 """Image quality and per-image detection deduplication; no training involved."""
 import cv2
+import numpy as np
 from assessment import CONFIG
 
 
@@ -17,6 +18,43 @@ def quality_for(image):
         reasons.append('Too bright, avoid direct glare')
     return {'blur_score': round(blur, 2), 'brightness': round(brightness, 2),
             'passed': not reasons, 'reason': '. '.join(reasons)}
+
+
+def framing_hint(image, view):
+    """Estimate visible foreground on a plain background using GrabCut."""
+    if view == 'close_up':
+        return 'Fill the frame with the main fabric and tap to focus on the weave.'
+    height, width = image.shape[:2]
+    scale = 192 / max(width, height)
+    width, height = max(1, round(width * scale)), max(1, round(height * scale))
+    if min(width, height) < 24:
+        return 'Use a larger photo with one garment centered.'
+    sample = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
+    border = np.concatenate((sample[0], sample[-1], sample[:, 0], sample[:, -1]))
+    background = np.median(border, axis=0)
+    if (np.linalg.norm(border - background, axis=1) < 24).mean() < .65:
+        return 'Use a plain background so the garment stands out.'
+    contrast = np.linalg.norm(sample - background, axis=2)
+    mask = np.full((height, width), cv2.GC_PR_BGD, dtype=np.uint8)
+    mask[contrast < 12] = cv2.GC_BGD
+    mask[contrast > 28] = cv2.GC_PR_FGD
+    if not (mask == cv2.GC_PR_FGD).any():
+        return 'Center one garment on a plain, contrasting background.'
+    models = [np.zeros((1, 65), dtype=np.float64) for _ in range(2)]
+    try:
+        cv2.grabCut(sample, mask, None, *models, 1, cv2.GC_INIT_WITH_MASK)
+    except cv2.error:
+        return 'Center one garment on a plain, contrasting background.'
+    foreground = np.isin(mask, (cv2.GC_FGD, cv2.GC_PR_FGD))
+    y, x = np.where(foreground)
+    coverage = foreground.mean()
+    if coverage < .025:
+        return 'Center one garment on a plain, contrasting background.'
+    if coverage < .18:
+        return 'The subject looks small in the frame. Try moving closer.'
+    if x.min() <= 3 or y.min() <= 3 or x.max() >= width - 4 or y.max() >= height - 4:
+        return 'The subject is close to the frame edge. Step back or center the garment.'
+    return 'The subject fills a useful part of the frame. Keep the whole garment visible.'
 
 
 def box_iou(a, b):

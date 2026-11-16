@@ -15,7 +15,7 @@ from ultralytics import YOLO
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from assessment import CONFIG, SUPPORT, assess, normalize_user_inputs
-from image_processing import quality_for, merge_detections, aggregate_fabrics
+from image_processing import quality_for, framing_hint, merge_detections, aggregate_fabrics
 from auth_routes import auth_bp
 from database import init_schema, ping_database
 from model_runtime import (
@@ -129,6 +129,26 @@ def scan_model_metadata(model_type, model):
         "fabric_test_accuracy": model.test_accuracy,
         "fabric_test_macro_f1": model.test_macro_f1,
     }
+
+
+def second_fabric_opinion(records, primary_type, primary_label):
+    second_type = "svm" if primary_type == "cnn" else "cnn"
+    try:
+        classifier = load_selected_classifier(second_type)
+        predictions = [
+            {**classifier.classify(record["path"]), "view": record["view"],
+             "quality": record["quality"]}
+            for record in records
+        ]
+        label = aggregate_fabrics(predictions)["fabric_type"]
+    except Exception:
+        app.logger.exception("Second fabric model could not assess the scan")
+        return {"status": "unavailable"}
+    if "uncertain" in (primary_label, label):
+        status = "inconclusive"
+    else:
+        status = "agrees" if label == primary_label else "disagrees"
+    return {"status": status, "model": classifier.name, "fabric_type": label}
 
 
 def extract_glcm_features(image_path):
@@ -300,7 +320,7 @@ def uploaded_views():
     return list(zip(views, files)), False
 
 
-def prepare_images(uploads, directory, *, validate_format=False):
+def prepare_images(uploads, directory, *, validate_format=False, guide_framing=False):
     records = []
     for index, (view, upload) in enumerate(uploads):
         path = str(Path(directory) / f"image_{index}.jpg")
@@ -311,8 +331,11 @@ def prepare_images(uploads, directory, *, validate_format=False):
         if image is None:
             raise ValueError(f"Cannot read {view} image. Upload a valid photo.")
         height, width = image.shape[:2]
+        quality = quality_for(image)
+        if guide_framing:
+            quality["framing_hint"] = framing_hint(image, view)
         records.append({"image_index": index, "view": view, "width": width,
-                        "height": height, "quality": quality_for(image), "path": path})
+                        "height": height, "quality": quality, "path": path})
     return records
 
 
@@ -348,7 +371,7 @@ def check_quality():
     try:
         uploads, _ = uploaded_views()
         with tempfile.TemporaryDirectory() as directory:
-            records = prepare_images(uploads, directory, validate_format=True)
+            records = prepare_images(uploads, directory, validate_format=True, guide_framing=True)
             return jsonify({"per_image": [public_image(r) for r in records]})
     except RequestEntityTooLarge:
         raise
@@ -392,10 +415,15 @@ def analyze_upload(*, hybrid):
                 record["raw_detections"] = raw
                 detections.extend(raw)
             fabric = aggregate_fabrics(records)
+            opinion = None
+            if hybrid and model_type and request.form.get("ai_assist") == "true":
+                opinion = second_fabric_opinion(records, model_type, fabric["fabric_type"])
+            needs_model_review = opinion and opinion["status"] in {"disagrees", "inconclusive"}
             merged = merge_detections(detections)
             detector_available = any(record["damage_available"] for record in records)
             assessment = assess(
-                fabric["fabric_type"], merged, user_inputs, fabric_confidence=fabric["fabric_confidence"],
+                fabric["fabric_type"], merged, user_inputs,
+                fabric_confidence=None if needs_model_review else fabric["fabric_confidence"],
                 detector_available=detector_available, quality_limited=failed_quality,
                 coverage_limited=not all(record["damage_available"] for record in records),
             )
@@ -408,6 +436,7 @@ def analyze_upload(*, hybrid):
             )
             return jsonify({
                 "schema_version": 3, **fabric, "damages": merged, **metadata, **analysis, **assessment,
+                **({"fabric_second_opinion": opinion} if opinion is not None else {}),
                 "per_image": [public_image(record) for record in records], "quality_override": failed_quality,
                 "model_versions": {"fabric": metadata["fabric_model"],
                                    "damage": DAMAGE_MODEL_PATH.name if detector_available else None},

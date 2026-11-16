@@ -67,11 +67,17 @@ class ApiContractTests(unittest.TestCase):
                     'image': (io.BytesIO(photo.read_bytes()), 'fabric.jpg'),
                     'model_type': model_type,
                     'allow_low_quality': 'true',
+                    'ai_assist': 'true',
                 })
                 self.assertEqual(response.status_code, 200, response.get_json())
                 body = response.get_json()
                 self.assertEqual(body['model_type'], model_type)
                 self.assertEqual(body['fabric_model'], name)
+                opinion = body['fabric_second_opinion']
+                self.assertIn(opinion['status'], {'agrees', 'disagrees'})
+                self.assertNotEqual(opinion['model'], name)
+                if opinion['status'] == 'disagrees':
+                    self.assertTrue(body['fabric_needs_confirmation'])
                 self.assertEqual(list(self.api.classifier_cache[model_type].labels),
                                  ['cotton', 'denim', 'linen', 'polyester', 'silk', 'wool'])
                 self.assertIn(body['fabric_type'], self.api.classifier_cache[model_type].labels)

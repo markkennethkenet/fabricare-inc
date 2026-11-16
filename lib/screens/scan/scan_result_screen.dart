@@ -284,6 +284,9 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     final scoreText =
         score?.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
     final perImage = result.analysis['per_image'] as List? ?? const [];
+    final secondOpinion = result.section('fabric_second_opinion');
+    final secondLabel = secondOpinion['fabric_type'];
+    final secondModel = secondOpinion['model'];
 
     return Scaffold(
       appBar: AppBar(title: const Text('FabriCare Result')),
@@ -305,6 +308,24 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                 if (needsConfirmation) 'Needs confirmation',
               ]),
             ),
+            if (secondOpinion.isNotEmpty)
+              SectionCard(
+                title: 'AI second opinion',
+                icon: Icons.fact_check_outlined,
+                child: _details([
+                  if (secondLabel is String && secondModel is String)
+                    '$secondModel suggests $secondLabel.',
+                  switch (secondOpinion['status']) {
+                    'agrees' =>
+                      'Both models suggest the same fabric. Check the fiber label if you need to confirm the composition.',
+                    'disagrees' =>
+                      'The models suggest different fabrics. Treat the fabric result as provisional and check the fiber label or capture another view.',
+                    'inconclusive' =>
+                      'The models could not settle on one fabric. Try another clear view.',
+                    _ => 'The second model was unavailable for this scan.',
+                  },
+                ]),
+              ),
             SectionCard(
               title: 'Visible Fabric Condition',
               icon: Icons.favorite_outline,
