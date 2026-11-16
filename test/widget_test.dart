@@ -36,6 +36,32 @@ void main() {
     expect(find.text('Start scan'), findsNothing);
   });
 
+  testWidgets('the big Scan button sits in the middle of the nav bar',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: HomeShell()));
+    final labels = ['Home', 'History', 'Scan', 'Tips', 'Profile'];
+    final centers = [
+      for (final label in labels)
+        tester.getCenter(find.text(label).last).dx,
+    ];
+    for (var i = 1; i < centers.length; i++) {
+      expect(centers[i], greaterThan(centers[i - 1]),
+          reason: '${labels[i]} should follow ${labels[i - 1]}');
+    }
+    final scanButton = find.byTooltip('Scan a garment');
+    final screenWidth = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    expect(tester.getCenter(scanButton).dx, closeTo(screenWidth / 2, 1));
+    expect(tester.getSize(scanButton).width, greaterThanOrEqualTo(70));
+
+    await tester.tap(scanButton);
+    await tester.pump();
+    expect(find.text('Scan a Garment'), findsOneWidget);
+
+    await tester.tap(find.text('History').last);
+    await tester.pump();
+    expect(find.text('Scan a Garment'), findsNothing);
+  });
+
   testWidgets('care guide filters tips and preserves search after reading',
       (tester) async {
     tester.view.physicalSize = const Size(340, 700);
@@ -86,8 +112,40 @@ void main() {
                 find.widgetWithText(ElevatedButton, 'Analyze garment'))
             .onPressed,
         isNull);
-    await tester.scrollUntilVisible(find.text('Garment history'), 300);
+    expect(find.text('Tap to open the smart camera'), findsOneWidget);
+    final details = find.text('Garment details (optional)');
+    await tester.scrollUntilVisible(details, 300);
+    await tester.tap(details);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Garment history'), 300,
+        scrollable: find.byType(Scrollable).first);
     expect(find.text('I know the purchase date'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('model picker explains each model and marks the recommended one',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: ScanScreen()));
+    expect(find.text('Choose Fabric Identification Model'), findsOneWidget);
+    expect(find.text('CNN — MobileNetV2'), findsOneWidget);
+    expect(find.text('Recommended'), findsOneWidget);
+    expect(find.text('81.9%'), findsOneWidget);
+
+    await tester.tap(find.text('Change'));
+    await tester.pumpAndSettle();
+    expect(find.text('GLCM + SVM'), findsOneWidget);
+    expect(find.text('GLCM + Decision Tree'), findsOneWidget);
+    expect(find.text('58.9%'), findsOneWidget);
+    expect(find.text('50.4%'), findsOneWidget);
+    expect(find.text('Best for'), findsNWidgets(3));
+    expect(find.textContaining('Keep the Recommended model'), findsOneWidget);
+
+    await tester.tap(find.text('GLCM + SVM'));
+    await tester.pumpAndSettle();
+    expect(find.text('GLCM + SVM'), findsOneWidget);
+    expect(find.text('Recommended'), findsNothing);
+    expect(find.textContaining('Less accurate than the recommended CNN'),
+        findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -124,7 +182,9 @@ void main() {
         });
     await tester
         .pumpWidget(MaterialApp(home: ScanResultScreen(result: result)));
-    expect(find.text('Future blend — 88% model score'), findsOneWidget);
+    expect(find.text('Future Blend'), findsOneWidget);
+    expect(find.text('88%'), findsOneWidget);
+    expect(find.text('High model score'), findsOneWidget);
     expect(find.textContaining('Future damage'), findsOneWidget);
     final scrollable = find.byType(Scrollable).first;
     await tester.scrollUntilVisible(find.text('Assessment unavailable'), 180,
@@ -188,8 +248,12 @@ void main() {
     );
     await tester
         .pumpWidget(MaterialApp(home: ScanResultScreen(result: result)));
-    expect(find.text('Cotton — 62.5% model score'), findsOneWidget);
+    expect(find.text('Cotton'), findsOneWidget);
+    expect(find.text('62.5%'), findsOneWidget);
+    expect(find.text('Moderate model score'), findsOneWidget);
     expect(find.text('Needs confirmation'), findsOneWidget);
+    final nameStyle = tester.widget<Text>(find.text('Cotton')).style;
+    expect(nameStyle?.fontSize, greaterThanOrEqualTo(40));
     expect(find.text('stain · Front photo · upper left · Candidate'),
         findsOneWidget);
     final scrollable = find.byType(Scrollable).first;

@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>FabriCare uses the camera to photograph garments so it can identify the fabric and check for damage.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>FabriCare lets you choose an existing garment photo to scan.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

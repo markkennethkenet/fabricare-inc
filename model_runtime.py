@@ -1,6 +1,7 @@
 """Load the FabriCare fabric classifiers."""
 import json
 import math
+import os
 import warnings
 from pathlib import Path
 
@@ -168,6 +169,22 @@ def prepare_mobilenet_v2_image(image_source):
     return np.asarray(prepare_fabric_rgb(image_source), dtype=np.float32)[None]
 
 
+def fabric_tta_enabled():
+    """Mirror averaging is on unless FABRIC_TTA is set to off, false, 0, or none."""
+    return os.environ.get("FABRIC_TTA", "flip").strip().lower() not in {"0", "off", "false", "none"}
+
+
+def prepare_mobilenet_v2_tta_batch(image_source):
+    """Return the photo and its horizontal mirror as one batch.
+
+    The V3 CNN trained with RandomFlip("horizontal"), so the mirror is an
+    in-distribution view. Averaging both reduces score swings from small
+    framing changes without adding crops or zooms the model never saw.
+    """
+    image = prepare_mobilenet_v2_image(image_source)
+    return np.concatenate([image, image[:, :, ::-1, :]])
+
+
 class FabricMobileNetV2:
     name = "MobileNetV2 (V3 refit)"
     filename = "mobilenetv2_v3_refit.keras"
@@ -199,18 +216,25 @@ class FabricMobileNetV2:
         if (tuple(self.model.input_shape[1:]) != (224, 224, 3)
                 or tuple(self.model.output_shape[1:]) != (len(self.labels),)):
             raise RuntimeError("MobileNetV2 must accept 224 x 224 RGB and return six scores.")
+        self.tta = fabric_tta_enabled()
 
     def classify(self, image_path):
-        batch = prepare_mobilenet_v2_image(image_path)
+        batch = (prepare_mobilenet_v2_tta_batch(image_path) if self.tta
+                 else prepare_mobilenet_v2_image(image_path))
         try:
             scores = np.asarray(self.model(batch, training=False), dtype=np.float32)
         except Exception as error:
             raise RuntimeError("MobileNetV2 inference failed.") from error
-        if scores.shape != (1, len(self.labels)):
+        if scores.shape != (len(batch), len(self.labels)):
             raise RuntimeError("MobileNetV2 returned an unexpected output shape.")
+        probabilities = scores.mean(axis=0)
+        total = float(probabilities.sum())
+        if total > 0:
+            probabilities = probabilities / total
         return {
-            **fabric_prediction(self.labels, scores[0], self.name),
+            **fabric_prediction(self.labels, probabilities, self.name),
             "score_kind": "uncalibrated_softmax",
+            "inference_views": len(batch),
         }
 
 

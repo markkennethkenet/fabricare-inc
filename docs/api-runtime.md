@@ -162,6 +162,39 @@ The refit reached 72.85% validation accuracy, 81.87% test accuracy, and
 0.8221 test macro-F1 in the V3 comparison. See the [dataset report](SIX_CLASS_DATASET.md)
 for the test split and the polyester results.
 
+### Mirror averaging and retake stability
+
+The CNN scores each photo and its horizontal mirror, then averages the two
+scores. The V3 model trained with `RandomFlip("horizontal")`, so the mirror is
+an in-distribution view. Averaging reduces score swings between retakes of the
+same garment. It adds no crops or zooms that the model never saw in training.
+Each `per_image` entry reports `inference_views`. Set `FABRIC_TTA=off` and
+restart to score a single view as before.
+
+Measure accuracy and retake stability with `scripts/evaluate_fabric_scans.py`.
+It runs the scanner's own preprocessing and reports single-view and
+mirror-averaged accuracy, macro-F1, and per-class recall. It also simulates
+retakes of each photo with a new crop, light level, tilt, and JPEG compression,
+and reports how often the label stays the same.
+
+```powershell
+# V3 held-out split
+.\.venv-api\Scripts\python.exe .\scripts\evaluate_fabric_scans.py `
+  --raw "$dataset\raw" --manifest "$dataset\reports\split_manifest_70_20_10.csv" `
+  --output research\output\scan_stability.json
+
+# Your own phone scans in phone_scans\<fabric>\*.jpg
+.\.venv-api\Scripts\python.exe .\scripts\evaluate_fabric_scans.py --folder C:\path\to\phone_scans
+```
+
+Judge the 80% target on independent phone scans of real garments. Simulated
+retakes check stability; they do not replace a real phone test set.
+
+The app's smart camera supports the same goal. It checks light, motion, focus,
+and framing live on the phone, guides the user closer or back, auto-captures
+when the frame is ready, and crops the photo to the on-screen guide box before
+upload.
+
 Each scan accepts views of one garment. When clear photos are available, fabric
 identification uses those photos. A close-up that disagrees with the clear
 whole-garment views is excluded from fabric identification. Clear front and back

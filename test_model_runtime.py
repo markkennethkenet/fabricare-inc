@@ -9,10 +9,14 @@ from sklearn.exceptions import InconsistentVersionWarning
 from model_runtime import (
     DECISION_TREE_FEATURES,
     DECISION_TREE_LABELS,
+    SIX_FABRIC_LABELS,
     FabricDecisionTree,
+    FabricMobileNetV2,
     extract_decision_tree_features,
+    fabric_tta_enabled,
     load_fabric_model,
     prepare_mobilenet_v2_image,
+    prepare_mobilenet_v2_tta_batch,
 )
 
 
@@ -79,6 +83,67 @@ class ModelRuntimeTests(unittest.TestCase):
         encoded.seek(0)
         with self.assertRaisesRegex(ValueError, "Only JPG and PNG"):
             classifier.classify(encoded)
+
+
+def _png(image):
+    encoded = BytesIO()
+    image.save(encoded, format="PNG")
+    encoded.seek(0)
+    return encoded
+
+
+def _cnn(scores_by_view, tta):
+    """A FabricMobileNetV2 with a stub network, skipping the TensorFlow load."""
+    classifier = FabricMobileNetV2.__new__(FabricMobileNetV2)
+    classifier.labels = list(SIX_FABRIC_LABELS)
+    classifier.tta = tta
+    classifier.seen = []
+
+    def network(batch, training):
+        classifier.seen.append(np.asarray(batch))
+        return np.asarray(scores_by_view[:len(batch)], dtype=np.float32)
+
+    classifier.model = network
+    return classifier
+
+
+class MirrorAveragingTests(unittest.TestCase):
+    def test_tta_batch_adds_the_horizontal_mirror(self):
+        pixels = np.zeros((224, 224, 3), dtype=np.uint8)
+        pixels[:, :112] = (200, 10, 10)
+        batch = prepare_mobilenet_v2_tta_batch(_png(Image.fromarray(pixels)))
+        self.assertEqual(batch.shape, (2, 224, 224, 3))
+        np.testing.assert_array_equal(batch[0, 50, 10], [200, 10, 10])
+        np.testing.assert_array_equal(batch[1, 50, 10], [0, 0, 0])
+        np.testing.assert_array_equal(batch[1], batch[0, :, ::-1, :])
+
+    def test_cnn_averages_photo_and_mirror_scores(self):
+        original = [0.50, 0.40, 0.02, 0.04, 0.02, 0.02]
+        mirrored = [0.30, 0.60, 0.02, 0.04, 0.02, 0.02]
+        classifier = _cnn([original, mirrored], tta=True)
+        result = classifier.classify(_png(Image.new("RGB", (64, 48), "navy")))
+        self.assertEqual(classifier.seen[0].shape[0], 2)
+        self.assertEqual(result["inference_views"], 2)
+        self.assertEqual(result["fabric_type"], "denim")
+        self.assertAlmostEqual(result["probabilities"]["cotton"], 0.40, places=5)
+        self.assertAlmostEqual(result["probabilities"]["denim"], 0.50, places=5)
+        self.assertAlmostEqual(sum(result["probabilities"].values()), 1, places=5)
+        self.assertEqual(result["score_kind"], "uncalibrated_softmax")
+
+    def test_cnn_uses_one_view_when_mirroring_is_off(self):
+        classifier = _cnn([[0.50, 0.40, 0.02, 0.04, 0.02, 0.02]], tta=False)
+        result = classifier.classify(_png(Image.new("RGB", (64, 48), "navy")))
+        self.assertEqual(classifier.seen[0].shape[0], 1)
+        self.assertEqual(result["inference_views"], 1)
+        self.assertEqual(result["fabric_type"], "cotton")
+
+    def test_environment_switch_turns_mirroring_off(self):
+        for value, expected in (("", True), ("flip", True), ("off", False),
+                                ("0", False), ("FALSE", False), ("none", False)):
+            with patch.dict("os.environ", {"FABRIC_TTA": value}):
+                self.assertIs(fabric_tta_enabled(), expected, value)
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertTrue(fabric_tta_enabled())
 
 
 if __name__ == "__main__":

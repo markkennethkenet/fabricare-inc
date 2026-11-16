@@ -7,6 +7,7 @@ import '../../models/damage_detection.dart';
 import '../../models/scan_result.dart';
 import '../../services/fabricare_api_service.dart';
 import '../../widgets/detection_image.dart';
+import '../../widgets/fabric_result_hero.dart';
 import '../../widgets/section_card.dart';
 import 'scan_screen.dart';
 
@@ -315,19 +316,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
           children: [
-            SectionCard(
-              title: 'Fabric Identification',
-              icon: Icons.texture_outlined,
-              child: _details([
-                result.fabricUncertain
-                    ? 'The photos give conflicting fabric results.'
-                    : '${result.fabricType}${scoreText == null ? '' : ' — $scoreText% model score'}',
-                if (result.fabricUncertain)
-                  'Retake the front and back of one garment. Scan other garments separately.',
-                if (result.analysis['fabric_close_up_excluded'] == true)
-                  'The close-up suggested a different fabric. Identification used the clear front or back photos.',
-                if (needsConfirmation) 'Needs confirmation',
-              ]),
+            FabricResultHero(
+              result: result,
+              score: score?.toDouble(),
+              scoreText: scoreText,
+              needsConfirmation: needsConfirmation,
+              threshold: (fabric['threshold_percent'] as num?)?.toDouble() ?? 85,
             ),
             if (secondOpinion.isNotEmpty)
               SectionCard(
