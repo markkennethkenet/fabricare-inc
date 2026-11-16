@@ -370,7 +370,7 @@ class _ScanCard extends StatelessWidget {
           child: Row(
             children: [
               FabricThumb(
-                  image: scan.image, fabricType: scan.fabricType, size: 62),
+                  imagePath: scan.imagePath, fabricType: scan.fabricType, size: 62),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

@@ -58,7 +58,7 @@ class ApiContractTests(unittest.TestCase):
     def test_selected_models_run_real_inference_on_a_fabric_photo(self):
         photo = Path(__file__).parent / 'model' / '2b2a6f82-68e1-4d0f-ad22-a011dd8df367.jpg'
         expected = {
-            'cnn': 'MobileNetV2 (V3 refit)',
+            'cnn': 'ConvNeXt-Tiny (V4)',
             'svm': 'GLCM + SVM',
             'glcm_dt': 'GLCM + Decision Tree',
         }
@@ -87,7 +87,9 @@ class ApiContractTests(unittest.TestCase):
                 self.assertIsInstance(body['estimated_remaining_months'], int)
                 self.assertEqual(body['lifespan']['status'], 'experimental_estimate')
                 care = body['ai_care']
-                self.assertIn(care['status'], {'model_suggestion', 'rule_based_guidance'})
+                self.assertEqual(care['status'], 'model_suggestion')
+                self.assertEqual(care['model'], 'Decision Tree')
+                self.assertTrue(0 < care['confidence'] <= 100)
                 self.assertIn(care['laundry_mode'], care_model.CLASSES)
                 self.assertTrue(care['label'] and care['reasons'])
                 self.assertIsInstance(care['alerts'], list)
@@ -95,12 +97,13 @@ class ApiContractTests(unittest.TestCase):
                 self.assertTrue(cited <= {ref['id'] for ref in body['references']})
                 self.assertEqual(body['schema_version'], 3)
                 self.assertIn('care_recommendation', body)
+                # Objective 3: every fabric model reports a confidence score.
+                self.assertIsInstance(body['fabric_confidence'], (int, float))
+                self.assertAlmostEqual(sum(body['fabric_probabilities'].values()), 1, places=3)
                 if model_type == 'svm':
-                    self.assertIsNone(body['fabric_confidence'])
-                    self.assertEqual(body['fabric_probabilities'], {})
-                    self.assertTrue(body['fabric']['review_required'])
-                else:
-                    self.assertIsInstance(body['fabric_confidence'], (int, float))
+                    self.assertEqual(body['per_image'][0]['score_kind'], 'svm_platt_probability')
+                if model_type == 'cnn':
+                    self.assertEqual(body['per_image'][0]['inference_views'], 2)
         self.fabric_mock.assert_not_called()
 
     def test_invalid_model_type_is_rejected(self):

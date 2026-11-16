@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../services/capture_guidance.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/scan_photo.dart';
 
 /// A photo returned by [SmartCaptureScreen].
 class CapturedPhoto {
@@ -892,9 +893,7 @@ class _ReviewView extends StatelessWidget {
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(20),
-                child: kIsWeb
-                    ? Image.network(path, fit: BoxFit.contain)
-                    : Image.file(File(path), fit: BoxFit.contain),
+                child: ScanPhoto(path, fit: BoxFit.contain),
               ),
             ),
             const SizedBox(height: 16),

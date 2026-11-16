@@ -329,7 +329,7 @@ class _RecentScan extends StatelessWidget {
       ),
       child: Row(
         children: [
-          FabricThumb(image: scan.image, fabricType: scan.fabricType),
+          FabricThumb(imagePath: scan.imagePath, fabricType: scan.fabricType),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

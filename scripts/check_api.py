@@ -28,11 +28,19 @@ def hashes():
     if backend == "decision_tree":
         paths.append(directory / "best_decision_tree.joblib")
     elif backend == "mobilenet":
-        from model_runtime import FabricMobileNetV2
+        from model_runtime import FabricCNN, FabricMobileNetV2
 
-        bundle = directory / "mobilenetv2_6class"
-        paths.extend(bundle / name for name in (
-            FabricMobileNetV2.filename, "class_names.json"))
+        v4 = directory / "fabric_cnn"
+        if (v4 / "model_info.json").is_file():
+            paths.extend(v4 / name for name in (
+                "model_info.json", "class_names.json", FabricCNN.architecture, FabricCNN.half_weights))
+        else:
+            bundle = directory / "mobilenetv2_6class"
+            paths.extend(bundle / name for name in (
+                FabricMobileNetV2.filename, "class_names.json"))
+        care = directory / "care" / "care_recommender.joblib"
+        if care.is_file():
+            paths.append(care)
     elif backend == "mobilenet_legacy":
         bundle = directory / "mobilenet_20261110"
         paths.extend(bundle / name for name in (

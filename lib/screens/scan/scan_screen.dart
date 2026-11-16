@@ -1,11 +1,10 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../data/mock_data.dart';
 import '../../models/scan_result.dart';
 import '../../services/fabricare_api_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/scan_photo.dart';
 import '../../widgets/section_card.dart';
 import 'fabric_model_picker.dart';
 import 'ocr_label_screen.dart';
@@ -862,17 +861,9 @@ class _PhotoSlot extends StatelessWidget {
                     width: double.infinity,
                     child: ColoredBox(
                       color: AppColors.surfaceMuted,
-                      child: kIsWeb
-                          ? Image.network(photo.path,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) =>
-                                  const _PhotoUnavailable())
-                          : Image.file(
-                              File(photo.path),
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) =>
-                                  const _PhotoUnavailable(),
-                            ),
+                      child: ScanPhoto(photo.path,
+                          fit: BoxFit.contain,
+                          fallback: const _PhotoUnavailable()),
                     ),
                   ),
                   if (checking)

@@ -1,0 +1,10 @@
+{
+  "svm": {
+    "test_accuracy": 59.49,
+    "test_macro_f1": 0.5903
+  },
+  "glcm_dt": {
+    "test_accuracy": 55.52,
+    "test_macro_f1": 0.497
+  }
+}

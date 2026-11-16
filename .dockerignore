@@ -4,6 +4,7 @@
 !requirements.txt
 !requirements-hosting.txt
 !assessment.py
+!care_model.py
 !assessment_config.json
 !auth_routes.py
 !database.py

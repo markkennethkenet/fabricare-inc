@@ -177,8 +177,12 @@ class FabricCareApiService {
     }
     try {
       for (final image in images) {
-        request.files.add(await http.MultipartFile.fromPath(
-            legacy ? 'image' : 'images', image.path));
+        final field = legacy ? 'image' : 'images';
+        // Browsers cannot open file paths; send the photo's bytes instead.
+        request.files.add(kIsWeb
+            ? http.MultipartFile.fromBytes(field, await image.readBytes(),
+                filename: '${image.view}.jpg')
+            : await http.MultipartFile.fromPath(field, image.path));
       }
     } on FileSystemException {
       throw const ScanApiException(

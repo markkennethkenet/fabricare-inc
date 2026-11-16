@@ -127,16 +127,16 @@ void main() {
       (tester) async {
     await tester.pumpWidget(const MaterialApp(home: ScanScreen()));
     expect(find.text('Choose Fabric Identification Model'), findsOneWidget);
-    expect(find.text('CNN — MobileNetV2'), findsOneWidget);
+    expect(find.text('CNN — ConvNeXt-Tiny'), findsOneWidget);
     expect(find.text('Recommended'), findsOneWidget);
-    expect(find.text('81.9%'), findsOneWidget);
+    expect(find.text('86.7%'), findsOneWidget);
 
     await tester.tap(find.text('Change'));
     await tester.pumpAndSettle();
     expect(find.text('GLCM + SVM'), findsOneWidget);
     expect(find.text('GLCM + Decision Tree'), findsOneWidget);
-    expect(find.text('58.9%'), findsOneWidget);
-    expect(find.text('50.4%'), findsOneWidget);
+    expect(find.text('59.5%'), findsOneWidget);
+    expect(find.text('55.5%'), findsOneWidget);
     expect(find.text('Best for'), findsNWidgets(3));
     expect(find.textContaining('Keep the Recommended model'), findsOneWidget);
 
@@ -196,6 +196,64 @@ void main() {
     expect(find.textContaining('About 12 months'), findsNothing);
     expect(find.text('Normal wash'), findsNothing);
   });
+  testWidgets('shows the AI laundry suggestion, alerts, health and lifespan',
+      (tester) async {
+    final result = ScanResult(
+      id: '2',
+      userId: '1',
+      garmentName: 'Wool sweater',
+      images: [],
+      dateScanned: DateTime(2026, 11, 16),
+      analysis: const {
+        'fabric_type': 'wool',
+        'fabric_confidence': 91.2,
+        'methodology_version': 'visible-condition-and-label-care/2.0',
+        'health_assessment': {'score': 80, 'grade': 'Good', 'deductions': []},
+        'condition_assessment': {'category': 'Possible hole · awaiting review'},
+        'lifespan': {
+          'status': 'experimental_estimate',
+          'remaining_months': 45,
+          'remaining_months_low': 27,
+          'remaining_months_high': 63,
+          'summary': 'Review the marked areas first.',
+          'factors': [
+            {'factor': 'Typical total lifespan for wool', 'effect_months': 73, 'source': 'D'},
+            {'factor': 'Possible hole', 'effect_months': -11, 'source': 'fabricare_assumption'},
+          ],
+        },
+        'ai_care': {
+          'status': 'model_suggestion',
+          'model': 'Random Forest',
+          'laundry_mode': 'repair_first',
+          'label': 'Repair before washing',
+          'detail': 'Mend the opening first; washing and pulling can enlarge it.',
+          'confidence': 97.0,
+          'reasons': [
+            {'text': 'An opening was detected.', 'reference_ids': ['I']}
+          ],
+          'alerts': [
+            {'level': 'high', 'title': 'Possible opening', 'action': 'Mend it first.', 'reference_ids': ['I']},
+            {'level': 'medium', 'title': 'Felting risk', 'action': 'Avoid hot water.', 'reference_ids': ['H']},
+          ],
+          'note': 'A suggestion from the scan. Check the garment care label before washing.',
+        },
+      },
+    );
+    await tester.pumpWidget(MaterialApp(home: ScanResultScreen(result: result)));
+    expect(find.text('AI laundry suggestion'), findsOneWidget);
+    expect(find.text('Repair before washing'), findsOneWidget);
+    expect(find.text('Random Forest'), findsOneWidget);
+    expect(find.text('97% model confidence'), findsOneWidget);
+    expect(find.text('Possible opening'), findsOneWidget);
+    expect(find.text('Felting risk'), findsOneWidget);
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.text('Fabric health 80/100'), 200, scrollable: scrollable);
+    expect(find.text('Good'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('About 27–63 months'), 200, scrollable: scrollable);
+    expect(find.text('Remaining months: undetermined'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shows a candidate and its care precaution at 62.5 percent',
       (tester) async {
     final result = ScanResult(

@@ -162,6 +162,17 @@ The refit reached 72.85% validation accuracy, 81.87% test accuracy, and
 0.8221 test macro-F1 in the V3 comparison. See the [dataset report](SIX_CLASS_DATASET.md)
 for the test split and the polyester results.
 
+### V4 models
+
+`model/fabric_cnn/` holds the V4 ConvNeXt-Tiny CNN (86.69% test accuracy, macro-F1 0.863) as an architecture file
+with 16-bit weights, which keeps it under GitHub's 100 MB file limit. The API loads it in place of
+`model/mobilenetv2_6class/` whenever `model/fabric_cnn/model_info.json` exists; delete that folder to fall back to
+the V3 MobileNetV2. `model/glcm_models/` holds the V4 GLCM SVM (now with confidence scores) and Decision Tree, with
+their test results in `metrics.json`; the V3 versions are in `v3_backup/`. `model/care/care_recommender.joblib` is the
+selected care model (Decision Tree). Install a new export with
+`.venv-api\Scripts\python.exe scripts\install_v4_models.py <export.zip>`. Results for every model are in
+[OBJECTIVES.md](OBJECTIVES.md) and `model/v4_training_report.json`.
+
 ### Mirror averaging and retake stability
 
 The CNN scores each photo and its horizontal mirror, then averages the two

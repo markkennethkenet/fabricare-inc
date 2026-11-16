@@ -1,0 +1,10 @@
+{
+  "name": "ConvNeXt-Tiny (V4)",
+  "backbone": "convnext_tiny",
+  "validation_accuracy": 77.5,
+  "test_accuracy": 86.69,
+  "test_macro_f1": 0.8629,
+  "inference": "mirror_average",
+  "input": "224x224 RGB, 0-255, gray (127) padding",
+  "weights": "float16"
+}

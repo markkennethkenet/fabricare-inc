@@ -1,10 +1,8 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/scan_result.dart';
 import '../theme/app_theme.dart';
+import 'scan_photo.dart';
 
 /// The large fabric result at the top of the scan result screen.
 class FabricResultHero extends StatelessWidget {
@@ -169,13 +167,8 @@ class FabricResultHero extends StatelessWidget {
                   child: SizedBox(
                     width: 92,
                     height: 92,
-                    child: kIsWeb
-                        ? Image.network(front.path,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const _NoPhoto())
-                        : Image.file(File(front.path),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const _NoPhoto()),
+                    child: ScanPhoto(front.path,
+                        fit: BoxFit.cover, fallback: const _NoPhoto()),
                   ),
                 ),
               ],

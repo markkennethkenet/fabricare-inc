@@ -6,6 +6,7 @@ import '../../data/mock_data.dart';
 import '../../models/damage_detection.dart';
 import '../../models/scan_result.dart';
 import '../../services/fabricare_api_service.dart';
+import '../../widgets/care_insights.dart';
 import '../../widgets/detection_image.dart';
 import '../../widgets/fabric_result_hero.dart';
 import '../../widgets/section_card.dart';
@@ -184,10 +185,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       for (final scan in [previous, result])
         (
           scan,
-          scan.images
-              .firstWhere((photo) => photo.view == 'front')
-              .file
-              .readAsBytes()
+          scan.images.firstWhere((photo) => photo.view == 'front').readBytes()
         ),
     ];
     await showDialog<void>(
@@ -323,6 +321,9 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
               needsConfirmation: needsConfirmation,
               threshold: (fabric['threshold_percent'] as num?)?.toDouble() ?? 85,
             ),
+            if (result.section('ai_care') case final care
+                when care['label'] is String)
+              AiCareCard(care: care),
             if (secondOpinion.isNotEmpty)
               SectionCard(
                 title: 'AI second opinion',
@@ -381,6 +382,10 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Only the referenced method reports a score; legacy records never show one.
+                  if (result.section('health_assessment') case final health
+                      when health['score'] is num)
+                    HealthScoreBadge(health: health),
                   Text(result.healthRating),
                   if (condition['quality_limited'] == true)
                     const Text('Photo quality may hide details.'),
@@ -426,12 +431,15 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             SectionCard(
               title: 'Durability and remaining lifespan',
               icon: Icons.hourglass_bottom,
-              child: _details([
-                lifespan['summary'] as String? ??
-                    'Check seams and high-friction areas for changes across scans.',
-                'Remaining months: undetermined',
-                if (lifespan.isEmpty) 'Rescan for current guidance.',
-              ]),
+              child: lifespan['status'] == 'experimental_estimate' &&
+                      lifespan['remaining_months'] is num
+                  ? LifespanEstimate(lifespan: lifespan)
+                  : _details([
+                      lifespan['summary'] as String? ??
+                          'Check seams and high-friction areas for changes across scans.',
+                      'Remaining months: undetermined',
+                      if (lifespan.isEmpty) 'Rescan for current guidance.',
+                    ]),
             ),
             SectionCard(
               title: 'Six-Month Condition Outlook',

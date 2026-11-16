@@ -33,7 +33,7 @@ class _GarmentProfileScreenState extends State<GarmentProfileScreen> {
           children: [
             Center(
               child: FabricThumb(
-                  image: r.image,
+                  imagePath: r.imagePath,
                   fabricType: r.fabricType,
                   size: 120,
                   radius: 24),

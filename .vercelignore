@@ -19,6 +19,7 @@ web/dist/
 !scripts/
 !scripts/build_web_vercel.sh
 !assessment.py
+!care_model.py
 !assessment_config.json
 !auth_routes.py
 !database.py

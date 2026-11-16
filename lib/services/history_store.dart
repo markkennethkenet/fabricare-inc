@@ -5,12 +5,23 @@ import 'package:path/path.dart' as p;
 import '../models/scan_result.dart';
 
 /// Hive keeps nested scan records without native database bindings or adapters.
+///
+/// On phones and desktops, [root] is the app's support directory and scan photos
+/// are copied into it. On the web there is no file system: pass a null [root],
+/// and Hive stores records in IndexedDB with each photo embedded as a data URL.
 class HistoryStore {
-  final Directory root;
+  final Directory? root;
   late Box<String> _box;
   HistoryStore(this.root);
 
+  bool get _inBrowser => root == null;
+
   Future<void> open() async {
+    final root = this.root;
+    if (root == null) {
+      _box = await Hive.openBox<String>('scan_history');
+      return;
+    }
     await root.create(recursive: true);
     _box = await Hive.openBox<String>('scan_history',
         path: p.join(root.path, 'database'));
@@ -29,8 +40,17 @@ class HistoryStore {
         !RegExp(r'^\d+$').hasMatch(scan.id)) {
       throw ArgumentError('Invalid account or scan ID');
     }
+    if (_inBrowser) {
+      final images = [
+        for (final source in scan.images)
+          ScanImage(view: source.view, path: await _dataUrl(source)),
+      ];
+      final saved = scan.withImages(images);
+      await put(saved);
+      return saved;
+    }
     final directory =
-        Directory(p.join(root.path, 'scan_media', scan.userId, scan.id));
+        Directory(p.join(root!.path, 'scan_media', scan.userId, scan.id));
     await directory.create(recursive: true);
     try {
       final images = <ScanImage>[];
@@ -49,6 +69,17 @@ class HistoryStore {
     }
   }
 
+  /// Blob URLs expire with the browser session, so embed the photo itself.
+  static Future<String> _dataUrl(ScanImage image) async {
+    if (image.path.startsWith('data:')) return image.path;
+    final bytes = await image.readBytes();
+    final png = bytes.length > 3 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E;
+    return 'data:image/${png ? 'png' : 'jpeg'};base64,${base64Encode(bytes)}';
+  }
+
   Future<void> put(ScanResult scan) =>
       _box.put(_key(scan.userId, scan.id), jsonEncode(scan.toJson()));
 
@@ -56,12 +87,18 @@ class HistoryStore {
     final key = _key(userId, id);
     final raw = _box.get(key);
     if (raw == null) return;
-    final scan = ScanResult.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    final mediaRoot = p.normalize(p.absolute(p.join(root.path, 'scan_media')));
-    for (final image in scan.images) {
-      final imagePath = p.normalize(p.absolute(image.path));
-      if (p.isWithin(mediaRoot, imagePath) && await File(imagePath).exists()) {
-        await File(imagePath).delete();
+    final root = this.root;
+    if (root != null) {
+      final scan =
+          ScanResult.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      final mediaRoot =
+          p.normalize(p.absolute(p.join(root.path, 'scan_media')));
+      for (final image in scan.images) {
+        final imagePath = p.normalize(p.absolute(image.path));
+        if (p.isWithin(mediaRoot, imagePath) &&
+            await File(imagePath).exists()) {
+          await File(imagePath).delete();
+        }
       }
     }
     await _box.delete(key);

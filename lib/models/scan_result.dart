@@ -1,11 +1,18 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart' show XFile;
 import 'damage_detection.dart';
 
 class ScanImage {
   final String view;
+
+  /// A file path on phones; a blob or data URL on the web.
   final String path;
   const ScanImage({required this.view, required this.path});
   File get file => File(path);
+
+  /// The photo's bytes from a file path, blob URL or data URL.
+  Future<Uint8List> readBytes() => XFile(path).readAsBytes();
   Map<String, dynamic> toJson() => {'view': view, 'path': path};
   factory ScanImage.fromJson(Map<String, dynamic> json) =>
       ScanImage(view: json['view'] as String, path: json['path'] as String);
@@ -34,6 +41,7 @@ class ScanResult {
       this.notes = ''});
 
   File? get image => images.isEmpty ? null : images.first.file;
+  String? get imagePath => images.isEmpty ? null : images.first.path;
   String get imageAssetFallback => fabricType;
   String get fabricType => analysis['fabric_type'] as String? ?? 'Unknown';
   bool get fabricUncertain => fabricType == 'uncertain';

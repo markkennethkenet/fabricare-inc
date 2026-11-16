@@ -1,8 +1,30 @@
 # FabricCare AI scientific basis and validation
 
-Methodology version `visible-condition-and-label-care/1.2`
+Methodology version `visible-condition-and-label-care/2.0`
 
 Scan API schema `3`
+
+## Method 2.0 changes (study objectives 2, 4 and 5)
+
+Version 2.0 adds three outputs that version 1.2 withheld. Each is labelled with its basis, and every number
+can be traced to a source or a named assumption.
+
+- **Health score.** 0–100 from the visible findings (`assessment.health_assessment`). The point weights are FabriCare
+  assumptions. Candidate findings below the detector thresholds in `care_model.DAMAGE_MIN_CONFIDENCE` are listed for
+  review but do not lower the score.
+- **Remaining lifespan.** A range in months (`assessment.lifespan_estimate`), with status `experimental_estimate`. It
+  starts from the garment-lifespan regression in Laitala and Klepp (2020), reference D, §4.1: an expected total
+  lifespan of about 5.2 years; fibre offsets relative to cotton (silk +2.2 years, wool +1.2 years, synthetics
+  +5.5 months); −2 months per 10 extra wears per year; and up to +4.8 years for washing less often. The garment's age
+  is subtracted. Damage reductions are FabriCare assumptions, and a confirmed opening caps the estimate at 6 months.
+  That regression explains about 22% of the variation, so the app shows a ±40% range. This estimate is not a
+  validated prediction for an individual garment.
+- **AI laundry-mode suggestion and alerts.** A Decision Tree, chosen against a Random Forest and an SVM, reproduces
+  the referenced care rules in `care_model.py` from the fabric, the detected condition and the image features. Its
+  agreement with those rules is reported in [OBJECTIVES.md](OBJECTIVES.md). An entered care label always takes
+  precedence.
+
+The sections below describe the version 1.2 audit and remain the basis for condition and label-based care.
 
 ## Repository audit before implementation
 

@@ -1,19 +1,20 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'scan_photo.dart';
 
 /// Shows the captured photo if available, otherwise a soft gradient tile
 /// with a fabric-appropriate icon — keeps history/profile cards looking
 /// real even though this prototype has no backend image storage.
 class FabricThumb extends StatelessWidget {
-  final File? image;
+  /// A file path on phones or a blob/data URL on the web.
+  final String? imagePath;
   final String fabricType;
   final double size;
   final double radius;
 
   const FabricThumb({
     super.key,
-    required this.image,
+    required this.imagePath,
     required this.fabricType,
     this.size = 56,
     this.radius = 14,
@@ -40,10 +41,10 @@ class FabricThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radii = BorderRadius.circular(radius);
-    if (image != null) {
+    if (imagePath case final String path) {
       return ClipRRect(
         borderRadius: radii,
-        child: Image.file(image!, width: size, height: size, fit: BoxFit.cover),
+        child: ScanPhoto(path, width: size, height: size, fit: BoxFit.cover),
       );
     }
     return Container(

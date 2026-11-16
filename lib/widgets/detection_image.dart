@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/scan_result.dart';
+import 'scan_photo.dart';
 
 /// Boxes are normalized to the exact displayed image frame (no cropping).
 class DetectionImage extends StatelessWidget {
@@ -32,9 +33,9 @@ class DetectionImage extends StatelessWidget {
       child: LayoutBuilder(
           builder: (context, constraints) =>
               Stack(fit: StackFit.expand, children: [
-                Image.file(scan.images[imageIndex].file,
+                ScanPhoto(scan.images[imageIndex].path,
                     fit: BoxFit.fill,
-                    errorBuilder: (_, __, ___) =>
+                    fallback:
                         const Center(child: Text('Saved photo unavailable'))),
                 for (final item in items)
                   Positioned(

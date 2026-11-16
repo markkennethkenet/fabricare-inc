@@ -4,8 +4,8 @@ import '../../theme/app_theme.dart';
 
 /// What the scanner's three fabric models do, in plain language.
 ///
-/// Accuracy is each model's result on the same 353 held-out photos of the
-/// FabriCare V3 dataset (see docs/SIX_CLASS_DATASET.md and model_runtime.py).
+/// Accuracy is each V4 model's result on the same 353 held-out photos of the
+/// FabriCare V3 dataset (see docs/OBJECTIVES.md and model/v4_training_report.json).
 class FabricModelInfo {
   final String id;
   final String name;
@@ -36,15 +36,16 @@ class FabricModelInfo {
 const fabricModels = [
   FabricModelInfo(
     id: 'cnn',
-    name: 'CNN — MobileNetV2',
+    name: 'CNN — ConvNeXt-Tiny',
     tagline: 'Most accurate · best for everyday scans',
     description:
         'A deep-learning model that reads colour, weave and texture together. '
-        'It learned from about 3,400 labelled photos of the six fabrics.',
+        'It learned from about 2,700 labelled photos of the six fabrics, '
+        'trained to stay steady when the same garment is photographed again.',
     bestFor:
         'Everyday scans of cotton, denim, linen, polyester, silk and wool.',
     score: 'Shows a confidence score',
-    testAccuracy: 81.87,
+    testAccuracy: 86.69,
     icon: Icons.auto_awesome_rounded,
     recommended: true,
   ),
@@ -57,8 +58,8 @@ const fabricModels = [
         'features) and separates fabrics with a support vector machine. '
         'It ignores colour.',
     bestFor: 'Comparing a texture-only answer with the CNN.',
-    score: 'No confidence score',
-    testAccuracy: 58.92,
+    score: 'Shows a confidence score (Platt-scaled)',
+    testAccuracy: 59.49,
     icon: Icons.grid_on_rounded,
   ),
   FabricModelInfo(
@@ -70,7 +71,7 @@ const fabricModels = [
         'rules, so every decision can be traced step by step.',
     bestFor: 'Learning or explaining how texture rules classify fabric.',
     score: 'Rough vote score, not a true confidence',
-    testAccuracy: 50.42,
+    testAccuracy: 55.52,
     icon: Icons.account_tree_outlined,
   ),
 ];

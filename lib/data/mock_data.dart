@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/scan_result.dart';
@@ -72,7 +73,9 @@ class AppData extends ChangeNotifier {
 
   Future<void> init() async {
     try {
-      _store = HistoryStore(await getApplicationSupportDirectory());
+      // Browsers have no app directory; history lives in IndexedDB instead.
+      _store = HistoryStore(
+          kIsWeb ? null : await getApplicationSupportDirectory());
       await _store!.open();
     } catch (e) {
       _store = null;
