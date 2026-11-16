@@ -1,9 +1,8 @@
 # FabriCare scan flow implementation
 
-The scan flow supports one required front image and optional back and close-up
-images, server-owned assessments, and persistent history per signed-in account.
-Existing model files were neither modified nor retrained. Care-label OCR remains
-mocked. Run the updated backend together with the updated app.
+This document records the earlier scan-flow implementation. For the current
+assessment, label entry and API behavior, see the
+[FabricCare scientific basis](FABRICARE_SCIENTIFIC_BASIS.md).
 
 ## Files changed by phase
 

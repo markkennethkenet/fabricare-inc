@@ -1,0 +1,146 @@
+[
+  {
+    "phase": "head",
+    "epoch": 1,
+    "accuracy": 0.6188375949859619,
+    "loss": 0.9519939422607422,
+    "val_accuracy": 0.6743295192718506,
+    "val_loss": 0.8570542931556702,
+    "validation_macro_f1_supported_classes": 0.6804286867377225
+  },
+  {
+    "phase": "head",
+    "epoch": 2,
+    "accuracy": 0.726728618144989,
+    "loss": 0.6868410706520081,
+    "val_accuracy": 0.6762452125549316,
+    "val_loss": 0.7865508198738098,
+    "validation_macro_f1_supported_classes": 0.6822125146359369
+  },
+  {
+    "phase": "head",
+    "epoch": 3,
+    "accuracy": 0.7487793564796448,
+    "loss": 0.6314831376075745,
+    "val_accuracy": 0.6934865713119507,
+    "val_loss": 0.7630792260169983,
+    "validation_macro_f1_supported_classes": 0.7016612305264661
+  },
+  {
+    "phase": "head",
+    "epoch": 4,
+    "accuracy": 0.7637423276901245,
+    "loss": 0.588007926940918,
+    "val_accuracy": 0.7011494040489197,
+    "val_loss": 0.7383788228034973,
+    "validation_macro_f1_supported_classes": 0.7110357968025744
+  },
+  {
+    "phase": "head",
+    "epoch": 5,
+    "accuracy": 0.774610161781311,
+    "loss": 0.5801162123680115,
+    "val_accuracy": 0.7183908224105835,
+    "val_loss": 0.7113816738128662,
+    "validation_macro_f1_supported_classes": 0.7288900628255027
+  },
+  {
+    "phase": "head",
+    "epoch": 6,
+    "accuracy": 0.7804378867149353,
+    "loss": 0.551484227180481,
+    "val_accuracy": 0.7203065156936646,
+    "val_loss": 0.7213789224624634,
+    "validation_macro_f1_supported_classes": 0.7304581494681894
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 1,
+    "accuracy": 0.7920932173728943,
+    "loss": 0.5187024474143982,
+    "val_accuracy": 0.7260536551475525,
+    "val_loss": 0.6821447014808655,
+    "validation_macro_f1_supported_classes": 0.7358924287370379
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 2,
+    "accuracy": 0.8087887763977051,
+    "loss": 0.47968780994415283,
+    "val_accuracy": 0.7356321811676025,
+    "val_loss": 0.6843676567077637,
+    "validation_macro_f1_supported_classes": 0.7465967324376631
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 3,
+    "accuracy": 0.819814145565033,
+    "loss": 0.46024155616760254,
+    "val_accuracy": 0.7452107071876526,
+    "val_loss": 0.6565400958061218,
+    "validation_macro_f1_supported_classes": 0.7564968076028643
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 4,
+    "accuracy": 0.8168215751647949,
+    "loss": 0.444443017244339,
+    "val_accuracy": 0.7567049860954285,
+    "val_loss": 0.6593130230903625,
+    "validation_macro_f1_supported_classes": 0.767657050271934
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 5,
+    "accuracy": 0.8322570323944092,
+    "loss": 0.42316457629203796,
+    "val_accuracy": 0.7547892928123474,
+    "val_loss": 0.6720602512359619,
+    "validation_macro_f1_supported_classes": 0.7670779945115489
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 6,
+    "accuracy": 0.8417073488235474,
+    "loss": 0.40443724393844604,
+    "val_accuracy": 0.7605363726615906,
+    "val_loss": 0.6528225541114807,
+    "validation_macro_f1_supported_classes": 0.7724863535773716
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 7,
+    "accuracy": 0.8497400879859924,
+    "loss": 0.3866451382637024,
+    "val_accuracy": 0.7681992053985596,
+    "val_loss": 0.6555993556976318,
+    "validation_macro_f1_supported_classes": 0.7790283931103572
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 8,
+    "accuracy": 0.8473775386810303,
+    "loss": 0.3753959834575653,
+    "val_accuracy": 0.7720306515693665,
+    "val_loss": 0.6711045503616333,
+    "validation_macro_f1_supported_classes": 0.7834984929946996
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 9,
+    "accuracy": 0.8487950563430786,
+    "loss": 0.37520933151245117,
+    "val_accuracy": 0.7662835121154785,
+    "val_loss": 0.6440256834030151,
+    "validation_macro_f1_supported_classes": 0.7784796257892223
+  },
+  {
+    "phase": "fine_tune",
+    "epoch": 10,
+    "accuracy": 0.8658056259155273,
+    "loss": 0.34392696619033813,
+    "val_accuracy": 0.7758620977401733,
+    "val_loss": 0.6393557786941528,
+    "validation_macro_f1_supported_classes": 0.7869372067485275
+  }
+]

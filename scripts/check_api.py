@@ -7,6 +7,7 @@ import hashlib
 import argparse
 import io
 import json
+import os
 from pathlib import Path
 import sys
 from threading import Thread
@@ -21,8 +22,28 @@ from werkzeug.serving import make_server
 
 
 def hashes():
-    return {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in (ROOT / "model").iterdir() if path.is_file()}
+    directory = ROOT / "model"
+    paths = [directory / "best.pt"]
+    backend = os.environ.get("FABRIC_CLASSIFIER", "mobilenet")
+    if backend == "decision_tree":
+        paths.append(directory / "best_decision_tree.joblib")
+    elif backend == "mobilenet":
+        bundle = directory / "mobilenetv2_6class"
+        paths.extend(bundle / name for name in (
+            "mobilenetv2_stage2_best.keras", "class_names.json"))
+    elif backend == "mobilenet_legacy":
+        bundle = directory / "mobilenet_20261110"
+        paths.extend(bundle / name for name in (
+            "fabric_mobilenetv2.keras", "fabric_labels.json"))
+    elif backend == "ensemble":
+        bundle = directory / "validation_development"
+        config = json.loads((bundle / "inference_config.json").read_text(encoding="utf-8"))
+        paths.extend(bundle / name for name in (
+            "inference_config.json", config["efficientnet_model"], config["mobilenet_model"]))
+    else:
+        paths.extend(directory / name for name in (
+            "fabric_glcm_decision_tree.pkl", "fabric_labels.json"))
+    return {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
 
 
 def main(require_database=False):
@@ -48,14 +69,26 @@ def main(require_database=False):
                 for i in range(count)]
 
     def validate(body, count):
-        assert body["schema_version"] == 2
-        assert body["fabric_type"] in api.fabric_labels
-        assert 0 <= body["health_score"] <= 100
+        assert body["schema_version"] == 3
+        if body["fabric_type"] == "uncertain":
+            assert count > 1 and body["fabric_uncertainty_reason"] == "front_back_disagree"
+        else:
+            assert body["fabric_type"] in api.fabric_labels
+        assert set(body["fabric_probabilities"]) == set(api.fabric_labels)
+        assert abs(sum(body["fabric_probabilities"].values()) - 1) < 0.001
         assert len(body["per_image"]) == count
-        assert body["estimate_method"] == "rule_based_not_validated"
-        assert "projected_condition_after_6_months" in body
+        assert body["methodology_version"]
+        assert body["condition_assessment"]["category"]
+        assert body["health_score"] is None
+        assert body["estimated_remaining_months"] is None
+        assert body["lifespan"]["status"] == "insufficient_evidence"
+        assert body["six_month_outlook"]["status"] == "insufficient_evidence"
+        assert body["projected_condition_after_6_months"] is None
+        assert body["laundry_settings"]["max_temperature_c"] is None
+        assert body["references"]
         for detection in body["damages"]:
-            assert detection["severity"] in {"minor", "moderate", "severe"}
+            assert detection["type"] in api.SUPPORT
+            assert detection["severity"] is None
             assert 0 <= detection["area_ratio"] <= 1
             assert all(0 <= coordinate <= 1 for coordinate in detection["bbox"])
             assert detection["view"] == body["per_image"][detection["image_index"]]["view"]
@@ -64,9 +97,13 @@ def main(require_database=False):
         response = session.get(base + "/", timeout=15)
         response.raise_for_status()
         health = response.json()
+        assert health["fabric_model"] == api.fabric_model_name
         assert health["runtime"]["scikit_learn"] == "1.6.1"
         checks["health"] = response.status_code
-        checks["database_connected"] = health["database_connected"]
+        checks["fabric_model"] = health["fabric_model"]
+        readiness = session.get(base + "/health/ready", timeout=15)
+        assert readiness.status_code in (200, 503), readiness.text
+        checks["database_connected"] = readiness.json()["database_connected"]
         checks["runtime"] = health["runtime"]
 
         response = session.post(base + "/analyze", files={"image": ("front.png", photo())}, timeout=90)

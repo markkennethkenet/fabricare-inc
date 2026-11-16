@@ -1,0 +1,2 @@
+# Install alongside the API requirements to enable FABRIC_CLASSIFIER=ensemble.
+tensorflow==2.21.0

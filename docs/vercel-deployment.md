@@ -3,29 +3,41 @@
 Target workspace: `markkennethkenets-projects`.
 Repository: `markkennethkenet/fabricare1`.
 Current source branch: `capstone/ai-skills-activity`.
-The approved source was pushed as `023f0ce9bb66c129c03e2bd00e5951f830363606`.
+Latest source: `9f33063da4ae56db18d77cd9a1db6384099cc9cc`.
 Vercel project: `fabricare1` (`prj_AVitYm0TBIjaicO5sjHGr13diMPr`).
-Deployment: `dpl_3zaKz5Zr7Eg6qYjQmikGeqf8qNbB`.
-URL: https://fabricare1-obtp140oe-markkennethkenets-projects.vercel.app
+Production deployment: `dpl_G5qpJCv5ucCbTYBpF2d1XPPiJH6g`.
+Production URL: https://fabricare1-markkennethkenets-projects.vercel.app
+Build URL: https://fabricare1-5j197c622-markkennethkenets-projects.vercel.app
 
-Vercel reports READY. The first deployment was labeled production by Vercel,
-although the request omitted the target to request a preview. Default deployment
-protection remains enabled. Authenticated verification returned HTTP 200 for
-the web root. API readiness returned HTTP 500/FUNCTION_INVOCATION_FAILED.
-Runtime logs confirm the models loaded, then the server exited because MySQL
-initialization failed. Registration and login are not working yet.
+Vercel reports READY. After explicit user approval, production was published
+with Standard Protection (`prod_deployment_urls_and_all_previews`). Anonymous
+requests to the production homepage and /api/health/ready returned HTTP 200;
+the API returned {"database_connected":true,"ready":true}. Generated deployment
+URLs still redirect anonymous visitors to Vercel sign-in. Unauthenticated
+/api/auth/me returns HTTP 401, so publishing production did not expose profiles.
 
 The Python container built successfully on Vercel with the existing model
-files and CPU-only dependencies. Browser signup/login and garment analysis
-remain unverified until a real database is connected.
+files and CPU-only dependencies. Live browser verification passed on the actual
+production app: signup with one disposable example.test account, profile showing
+the registered name and email, logout to the login form, rejection of an
+incorrect password, successful fresh login, and session restoration after a
+browser reload. A final logout returned the app to its empty login form; the
+disposable account has no active test session. One synthetic example.test
+verification account remains in the new database. Its password was cleared
+from the setup session and was not recorded in this report. No real user
+credentials or records were used for the test.
+Garment analysis was not tested as part of this authentication fix.
+
+The final signed-out screen is saved locally as
+`C:/flutter-project/auth-verification.jpg`. Existing local or Railway account
+data was not migrated to this new Aiven database; users should sign up first.
 
 Vercel workspace access was verified on October 25, 2026. The connected
 workspace is on the Hobby plan. After learning Railway's trial had expired,
-the user selected Aiven's free MySQL tier instead. The Aiven browser tab is
-at its login page; user sign-in/account setup is pending. Never request
-passwords in chat.
+the user selected Aiven's free MySQL tier instead and completed sign-in.
+Never request passwords in chat.
 
-Update: Aiven service `fabricare-mysql` was created in project
+Aiven service `fabricare-mysql` is RUNNING in project
 `kentorres903-c399` on the Free-1-1gb plan in Asia Pacific (DigitalOcean blr).
 Its generated connection settings and project CA certificate were transferred
 directly from the browser to Vercel as six production-only Secret variables.
@@ -36,8 +48,16 @@ without a configured CA are refused. The local MySQL configuration is unchanged.
 
 All 28 backend tests passed after the TLS change, including three new tests
 for certificate/hostname verification, refusing an Aiven connection without a
-CA, and preserving the existing local MySQL connection behavior. A new Vercel
-deployment and real registration/login verification are the remaining steps.
+CA, and preserving the existing local MySQL connection behavior. All five
+Flutter tests passed, as did two API_BASE_URL override tests and targeted Dart
+analysis. App builds now default to the hosted production API. API_BASE_URL
+still overrides that address; API_HOST or USE_LOCAL_API=true enables local
+development. Existing app installations need a rebuild/restart for this change.
+
+Android release APK builds were attempted twice, including an IPv4 retry.
+Gradle failed with "java.io.IOException: Unable to establish loopback
+connection" in this execution environment. No new APK was produced; do not
+distribute an older APK as the updated build.
 
 Railway's existing project `empathetic-hope` contains an offline MySQL service
 and a persistent volume. Its dashboard reports "Trial expired" and requires a
@@ -60,7 +80,8 @@ on the Vercel project: the web service's build needs the parent Flutter source
 and build script. The deployment root is the repository root. Do not set the
 project root to `web` or change its framework to Flask.
 
-`.vercelignore` and `.dockerignore` allowlist application/build inputs and keep
+`.vercelignore` and `.dockerignore` allowlist application/build inputs, including
+`model_analysis.py`, and keep
 local credentials, virtual environments, datasets, and build outputs out of the
 deployment. Do not publish `.env` or place database passwords in Flutter.
 

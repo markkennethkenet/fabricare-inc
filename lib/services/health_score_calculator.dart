@@ -1,2 +1,2 @@
-// Assessment calculations live in assessment.py and assessment_config.json.
-// Flutter displays the backend score, grade, severity and rule-based lifespan.
+// The versioned photo assessment lives in assessment.py.
+// The active method reports qualitative findings.

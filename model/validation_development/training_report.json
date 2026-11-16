@@ -1,0 +1,834 @@
+{
+  "experiment": "EfficientNetB0 and MobileNetV2 comparison using training and validation only",
+  "selection_metric": "validation macro F1 on supported classes",
+  "test_evaluated": false,
+  "deployment_target_verified": false,
+  "classes": [
+    "cotton",
+    "denim",
+    "linen",
+    "polyester",
+    "silk",
+    "wool"
+  ],
+  "counts": {
+    "train": {
+      "cotton": 1467,
+      "denim": 1046,
+      "linen": 28,
+      "polyester": 906,
+      "silk": 1129,
+      "wool": 1773
+    },
+    "valid": {
+      "cotton": 147,
+      "denim": 97,
+      "linen": 0,
+      "polyester": 111,
+      "silk": 76,
+      "wool": 91
+    }
+  },
+  "epochs": [
+    {
+      "phase": "head",
+      "epoch": 1,
+      "accuracy": 0.6188375949859619,
+      "loss": 0.9519939422607422,
+      "val_accuracy": 0.6743295192718506,
+      "val_loss": 0.8570542931556702,
+      "validation_macro_f1_supported_classes": 0.6804286867377225
+    },
+    {
+      "phase": "head",
+      "epoch": 2,
+      "accuracy": 0.726728618144989,
+      "loss": 0.6868410706520081,
+      "val_accuracy": 0.6762452125549316,
+      "val_loss": 0.7865508198738098,
+      "validation_macro_f1_supported_classes": 0.6822125146359369
+    },
+    {
+      "phase": "head",
+      "epoch": 3,
+      "accuracy": 0.7487793564796448,
+      "loss": 0.6314831376075745,
+      "val_accuracy": 0.6934865713119507,
+      "val_loss": 0.7630792260169983,
+      "validation_macro_f1_supported_classes": 0.7016612305264661
+    },
+    {
+      "phase": "head",
+      "epoch": 4,
+      "accuracy": 0.7637423276901245,
+      "loss": 0.588007926940918,
+      "val_accuracy": 0.7011494040489197,
+      "val_loss": 0.7383788228034973,
+      "validation_macro_f1_supported_classes": 0.7110357968025744
+    },
+    {
+      "phase": "head",
+      "epoch": 5,
+      "accuracy": 0.774610161781311,
+      "loss": 0.5801162123680115,
+      "val_accuracy": 0.7183908224105835,
+      "val_loss": 0.7113816738128662,
+      "validation_macro_f1_supported_classes": 0.7288900628255027
+    },
+    {
+      "phase": "head",
+      "epoch": 6,
+      "accuracy": 0.7804378867149353,
+      "loss": 0.551484227180481,
+      "val_accuracy": 0.7203065156936646,
+      "val_loss": 0.7213789224624634,
+      "validation_macro_f1_supported_classes": 0.7304581494681894
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 1,
+      "accuracy": 0.7920932173728943,
+      "loss": 0.5187024474143982,
+      "val_accuracy": 0.7260536551475525,
+      "val_loss": 0.6821447014808655,
+      "validation_macro_f1_supported_classes": 0.7358924287370379
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 2,
+      "accuracy": 0.8087887763977051,
+      "loss": 0.47968780994415283,
+      "val_accuracy": 0.7356321811676025,
+      "val_loss": 0.6843676567077637,
+      "validation_macro_f1_supported_classes": 0.7465967324376631
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 3,
+      "accuracy": 0.819814145565033,
+      "loss": 0.46024155616760254,
+      "val_accuracy": 0.7452107071876526,
+      "val_loss": 0.6565400958061218,
+      "validation_macro_f1_supported_classes": 0.7564968076028643
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 4,
+      "accuracy": 0.8168215751647949,
+      "loss": 0.444443017244339,
+      "val_accuracy": 0.7567049860954285,
+      "val_loss": 0.6593130230903625,
+      "validation_macro_f1_supported_classes": 0.767657050271934
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 5,
+      "accuracy": 0.8322570323944092,
+      "loss": 0.42316457629203796,
+      "val_accuracy": 0.7547892928123474,
+      "val_loss": 0.6720602512359619,
+      "validation_macro_f1_supported_classes": 0.7670779945115489
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 6,
+      "accuracy": 0.8417073488235474,
+      "loss": 0.40443724393844604,
+      "val_accuracy": 0.7605363726615906,
+      "val_loss": 0.6528225541114807,
+      "validation_macro_f1_supported_classes": 0.7724863535773716
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 7,
+      "accuracy": 0.8497400879859924,
+      "loss": 0.3866451382637024,
+      "val_accuracy": 0.7681992053985596,
+      "val_loss": 0.6555993556976318,
+      "validation_macro_f1_supported_classes": 0.7790283931103572
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 8,
+      "accuracy": 0.8473775386810303,
+      "loss": 0.3753959834575653,
+      "val_accuracy": 0.7720306515693665,
+      "val_loss": 0.6711045503616333,
+      "validation_macro_f1_supported_classes": 0.7834984929946996
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 9,
+      "accuracy": 0.8487950563430786,
+      "loss": 0.37520933151245117,
+      "val_accuracy": 0.7662835121154785,
+      "val_loss": 0.6440256834030151,
+      "validation_macro_f1_supported_classes": 0.7784796257892223
+    },
+    {
+      "phase": "fine_tune",
+      "epoch": 10,
+      "accuracy": 0.8658056259155273,
+      "loss": 0.34392696619033813,
+      "val_accuracy": 0.7758620977401733,
+      "val_loss": 0.6393557786941528,
+      "validation_macro_f1_supported_classes": 0.7869372067485275
+    }
+  ],
+  "comparisons": [
+    {
+      "efficientnet_weight": 0.0,
+      "mobilenet_weight": 1.0,
+      "validation_accuracy": 0.6954022988505747,
+      "validation_macro_f1_supported_classes": 0.703856933637914,
+      "classification_report": {
+        "cotton": {
+          "precision": 0.6694915254237288,
+          "recall": 0.5374149659863946,
+          "f1-score": 0.5962264150943396,
+          "support": 147.0
+        },
+        "denim": {
+          "precision": 0.6515151515151515,
+          "recall": 0.8865979381443299,
+          "f1-score": 0.7510917030567685,
+          "support": 97.0
+        },
+        "linen": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 0.0
+        },
+        "polyester": {
+          "precision": 0.7692307692307693,
+          "recall": 0.6306306306306306,
+          "f1-score": 0.693069306930693,
+          "support": 111.0
+        },
+        "silk": {
+          "precision": 0.631578947368421,
+          "recall": 0.7894736842105263,
+          "f1-score": 0.7017543859649122,
+          "support": 76.0
+        },
+        "wool": {
+          "precision": 0.8095238095238095,
+          "recall": 0.7472527472527473,
+          "f1-score": 0.7771428571428571,
+          "support": 91.0
+        },
+        "accuracy": 0.6954022988505747,
+        "macro avg": {
+          "precision": 0.5885567005103133,
+          "recall": 0.5985616610374381,
+          "f1-score": 0.5865474446982617,
+          "support": 522.0
+        },
+        "weighted avg": {
+          "precision": 0.7062519271753638,
+          "recall": 0.6954022988505747,
+          "f1-score": 0.6925003919885339,
+          "support": 522.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          79,
+          34,
+          1,
+          9,
+          16,
+          8
+        ],
+        [
+          5,
+          86,
+          0,
+          4,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          18,
+          3,
+          1,
+          70,
+          15,
+          4
+        ],
+        [
+          6,
+          1,
+          0,
+          7,
+          60,
+          2
+        ],
+        [
+          10,
+          8,
+          0,
+          1,
+          4,
+          68
+        ]
+      ]
+    },
+    {
+      "efficientnet_weight": 0.25,
+      "mobilenet_weight": 0.75,
+      "validation_accuracy": 0.7222222222222222,
+      "validation_macro_f1_supported_classes": 0.7314099349313772,
+      "classification_report": {
+        "cotton": {
+          "precision": 0.7043478260869566,
+          "recall": 0.5510204081632653,
+          "f1-score": 0.6183206106870229,
+          "support": 147.0
+        },
+        "denim": {
+          "precision": 0.6691729323308271,
+          "recall": 0.9175257731958762,
+          "f1-score": 0.7739130434782608,
+          "support": 97.0
+        },
+        "linen": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 0.0
+        },
+        "polyester": {
+          "precision": 0.7653061224489796,
+          "recall": 0.6756756756756757,
+          "f1-score": 0.7177033492822966,
+          "support": 111.0
+        },
+        "silk": {
+          "precision": 0.6813186813186813,
+          "recall": 0.8157894736842105,
+          "f1-score": 0.7425149700598802,
+          "support": 76.0
+        },
+        "wool": {
+          "precision": 0.8433734939759037,
+          "recall": 0.7692307692307693,
+          "f1-score": 0.8045977011494253,
+          "support": 91.0
+        },
+        "accuracy": 0.7222222222222222,
+        "macro avg": {
+          "precision": 0.6105865093602247,
+          "recall": 0.6215403499916329,
+          "f1-score": 0.609508279109481,
+          "support": 522.0
+        },
+        "weighted avg": {
+          "precision": 0.7316572647408748,
+          "recall": 0.7222222222222222,
+          "f1-score": 0.7189220216242667,
+          "support": 522.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          81,
+          32,
+          1,
+          12,
+          15,
+          6
+        ],
+        [
+          3,
+          89,
+          0,
+          3,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          17,
+          3,
+          1,
+          75,
+          11,
+          4
+        ],
+        [
+          5,
+          1,
+          0,
+          7,
+          62,
+          1
+        ],
+        [
+          9,
+          8,
+          0,
+          1,
+          3,
+          70
+        ]
+      ]
+    },
+    {
+      "efficientnet_weight": 0.5,
+      "mobilenet_weight": 0.5,
+      "validation_accuracy": 0.7624521072796935,
+      "validation_macro_f1_supported_classes": 0.7728062119588548,
+      "classification_report": {
+        "cotton": {
+          "precision": 0.7619047619047619,
+          "recall": 0.54421768707483,
+          "f1-score": 0.6349206349206349,
+          "support": 147.0
+        },
+        "denim": {
+          "precision": 0.696969696969697,
+          "recall": 0.9484536082474226,
+          "f1-score": 0.8034934497816594,
+          "support": 97.0
+        },
+        "linen": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 0.0
+        },
+        "polyester": {
+          "precision": 0.7843137254901961,
+          "recall": 0.7207207207207207,
+          "f1-score": 0.7511737089201878,
+          "support": 111.0
+        },
+        "silk": {
+          "precision": 0.75,
+          "recall": 0.868421052631579,
+          "f1-score": 0.8048780487804879,
+          "support": 76.0
+        },
+        "wool": {
+          "precision": 0.8602150537634409,
+          "recall": 0.8791208791208791,
+          "f1-score": 0.8695652173913043,
+          "support": 91.0
+        },
+        "accuracy": 0.7624521072796935,
+        "macro avg": {
+          "precision": 0.6422338730213494,
+          "recall": 0.6601556579659051,
+          "f1-score": 0.644005176632379,
+          "support": 522.0
+        },
+        "weighted avg": {
+          "precision": 0.7700085326205853,
+          "recall": 0.7624521072796935,
+          "f1-score": 0.7566161803490822,
+          "support": 522.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          80,
+          32,
+          1,
+          13,
+          13,
+          8
+        ],
+        [
+          2,
+          92,
+          0,
+          2,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          15,
+          4,
+          1,
+          80,
+          7,
+          4
+        ],
+        [
+          3,
+          1,
+          0,
+          5,
+          66,
+          1
+        ],
+        [
+          5,
+          3,
+          0,
+          2,
+          1,
+          80
+        ]
+      ]
+    },
+    {
+      "efficientnet_weight": 0.75,
+      "mobilenet_weight": 0.25,
+      "validation_accuracy": 0.7816091954022989,
+      "validation_macro_f1_supported_classes": 0.7920363088947376,
+      "classification_report": {
+        "cotton": {
+          "precision": 0.7719298245614035,
+          "recall": 0.5986394557823129,
+          "f1-score": 0.6743295019157088,
+          "support": 147.0
+        },
+        "denim": {
+          "precision": 0.7131782945736435,
+          "recall": 0.9484536082474226,
+          "f1-score": 0.8141592920353983,
+          "support": 97.0
+        },
+        "linen": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 0.0
+        },
+        "polyester": {
+          "precision": 0.8137254901960784,
+          "recall": 0.7477477477477478,
+          "f1-score": 0.7793427230046949,
+          "support": 111.0
+        },
+        "silk": {
+          "precision": 0.7926829268292683,
+          "recall": 0.8552631578947368,
+          "f1-score": 0.8227848101265823,
+          "support": 76.0
+        },
+        "wool": {
+          "precision": 0.8602150537634409,
+          "recall": 0.8791208791208791,
+          "f1-score": 0.8695652173913043,
+          "support": 91.0
+        },
+        "accuracy": 0.7816091954022989,
+        "macro avg": {
+          "precision": 0.6586219316539724,
+          "recall": 0.6715374747988498,
+          "f1-score": 0.6600302574122814,
+          "support": 522.0
+        },
+        "weighted avg": {
+          "precision": 0.7883122232326283,
+          "recall": 0.7816091954022989,
+          "f1-score": 0.7782931239746991,
+          "support": 522.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          88,
+          30,
+          1,
+          10,
+          10,
+          8
+        ],
+        [
+          1,
+          92,
+          0,
+          2,
+          1,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          15,
+          3,
+          1,
+          83,
+          5,
+          4
+        ],
+        [
+          5,
+          1,
+          0,
+          5,
+          65,
+          0
+        ],
+        [
+          5,
+          3,
+          0,
+          2,
+          1,
+          80
+        ]
+      ]
+    },
+    {
+      "efficientnet_weight": 1.0,
+      "mobilenet_weight": 0.0,
+      "validation_accuracy": 0.7758620689655172,
+      "validation_macro_f1_supported_classes": 0.7869372067485275,
+      "classification_report": {
+        "cotton": {
+          "precision": 0.7631578947368421,
+          "recall": 0.5918367346938775,
+          "f1-score": 0.6666666666666666,
+          "support": 147.0
+        },
+        "denim": {
+          "precision": 0.7244094488188977,
+          "recall": 0.9484536082474226,
+          "f1-score": 0.8214285714285714,
+          "support": 97.0
+        },
+        "linen": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 0.0
+        },
+        "polyester": {
+          "precision": 0.780952380952381,
+          "recall": 0.7387387387387387,
+          "f1-score": 0.7592592592592593,
+          "support": 111.0
+        },
+        "silk": {
+          "precision": 0.7951807228915663,
+          "recall": 0.868421052631579,
+          "f1-score": 0.8301886792452831,
+          "support": 76.0
+        },
+        "wool": {
+          "precision": 0.8571428571428571,
+          "recall": 0.8571428571428571,
+          "f1-score": 0.8571428571428571,
+          "support": 91.0
+        },
+        "accuracy": 0.7758620689655172,
+        "macro avg": {
+          "precision": 0.6534738840904241,
+          "recall": 0.6674321652424124,
+          "f1-score": 0.655781005623773,
+          "support": 522.0
+        },
+        "weighted avg": {
+          "precision": 0.7807880771785866,
+          "recall": 0.7758620689655172,
+          "f1-score": 0.7721277563773769,
+          "support": 522.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          87,
+          29,
+          1,
+          13,
+          10,
+          7
+        ],
+        [
+          1,
+          92,
+          0,
+          2,
+          1,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          15,
+          4,
+          1,
+          82,
+          5,
+          4
+        ],
+        [
+          5,
+          0,
+          0,
+          4,
+          66,
+          1
+        ],
+        [
+          6,
+          2,
+          0,
+          4,
+          1,
+          78
+        ]
+      ]
+    }
+  ],
+  "selected": {
+    "efficientnet_weight": 0.75,
+    "mobilenet_weight": 0.25,
+    "validation_accuracy": 0.7816091954022989,
+    "validation_macro_f1_supported_classes": 0.7920363088947376,
+    "classification_report": {
+      "cotton": {
+        "precision": 0.7719298245614035,
+        "recall": 0.5986394557823129,
+        "f1-score": 0.6743295019157088,
+        "support": 147.0
+      },
+      "denim": {
+        "precision": 0.7131782945736435,
+        "recall": 0.9484536082474226,
+        "f1-score": 0.8141592920353983,
+        "support": 97.0
+      },
+      "linen": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 0.0
+      },
+      "polyester": {
+        "precision": 0.8137254901960784,
+        "recall": 0.7477477477477478,
+        "f1-score": 0.7793427230046949,
+        "support": 111.0
+      },
+      "silk": {
+        "precision": 0.7926829268292683,
+        "recall": 0.8552631578947368,
+        "f1-score": 0.8227848101265823,
+        "support": 76.0
+      },
+      "wool": {
+        "precision": 0.8602150537634409,
+        "recall": 0.8791208791208791,
+        "f1-score": 0.8695652173913043,
+        "support": 91.0
+      },
+      "accuracy": 0.7816091954022989,
+      "macro avg": {
+        "precision": 0.6586219316539724,
+        "recall": 0.6715374747988498,
+        "f1-score": 0.6600302574122814,
+        "support": 522.0
+      },
+      "weighted avg": {
+        "precision": 0.7883122232326283,
+        "recall": 0.7816091954022989,
+        "f1-score": 0.7782931239746991,
+        "support": 522.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        88,
+        30,
+        1,
+        10,
+        10,
+        8
+      ],
+      [
+        1,
+        92,
+        0,
+        2,
+        1,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        15,
+        3,
+        1,
+        83,
+        5,
+        4
+      ],
+      [
+        5,
+        1,
+        0,
+        5,
+        65,
+        0
+      ],
+      [
+        5,
+        3,
+        0,
+        2,
+        1,
+        80
+      ]
+    ]
+  },
+  "seed": 42,
+  "tensorflow": "2.21.0",
+  "numpy": "2.4.6",
+  "missing_validation_classes": [
+    "linen"
+  ],
+  "limitations": [
+    "Linen has no validation images.",
+    "Repeated selection on the existing validation set can overfit this development set.",
+    "95% deployment accuracy is not established; new independent garment-level test data is required.",
+    "Garment identity and non-burst near-duplicates remain unverified."
+  ]
+}

@@ -20,7 +20,11 @@ class _GarmentProfileScreenState extends State<GarmentProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final r = widget.result;
+    final r = AppData.instance.history.firstWhere(
+      (scan) =>
+          scan.id == widget.result.id && scan.userId == widget.result.userId,
+      orElse: () => widget.result,
+    );
     return Scaffold(
       appBar: AppBar(title: const Text('Garment Profile')),
       body: SafeArea(
@@ -55,12 +59,19 @@ class _GarmentProfileScreenState extends State<GarmentProfileScreen> {
                   LabelRow(
                       icon: Icons.texture_outlined,
                       label: 'Fabric',
-                      value: '${r.fabricType} (${r.confidencePercent}%)'),
+                      value: r.fabricUncertain || !r.hasFabricScore
+                          ? r.fabricLabel
+                          : '${r.fabricType} (${r.confidencePercent}% model score)'),
+                  if (r.fabricModelName case final modelName?)
+                    LabelRow(
+                        icon: Icons.tune,
+                        label: 'Fabric model',
+                        value: modelName),
                   if (r.hasHealthAssessment)
                     LabelRow(
                         icon: Icons.favorite_outline_rounded,
                         label: 'Health',
-                        value: '${r.healthScore}/100 · ${r.healthRating}'),
+                        value: r.healthRating),
                   LabelRow(
                       icon: Icons.hourglass_bottom_rounded,
                       label: 'Lifespan',
@@ -93,8 +104,11 @@ class _GarmentProfileScreenState extends State<GarmentProfileScreen> {
               ),
             ),
             OutlinedButton(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ScanResultScreen(result: r))),
+                onPressed: () async {
+                  await Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ScanResultScreen(result: r)));
+                  if (mounted) setState(() {});
+                },
                 child: const Text('View all images and detections')),
             const SizedBox(height: 12),
             SectionCard(

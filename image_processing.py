@@ -33,7 +33,7 @@ def merge_detections(detections):
     """NMS: keep highest confidence same-type box per overlapping region in ONE image.
 
     Different views/images are never merged: 2D coordinates cannot establish
-    cross-view identity. Scores may therefore count the same physical defect twice.
+    cross-view identity. The same physical finding may appear in multiple views.
     """
     kept = []
     for detection in sorted(detections, key=lambda d: d['confidence'], reverse=True):
@@ -47,14 +47,38 @@ def merge_detections(detections):
 
 
 def aggregate_fabrics(predictions):
-    """Average per-class probabilities equally across supplied images.
+    """Average fabric scores and abstain when the front and back disagree.
 
-    If a classifier has no predict_proba, each image supplies a one-hot vote.
+    Without model scores, select by vote and keep the score unavailable.
+    Agreeing front/back views take precedence over a dissenting close-up.
     Labels come from model/config metadata, never a fixed client class list.
     """
-    labels = sorted({label for prediction in predictions for label in prediction['probabilities']})
-    averages = {label: sum(p['probabilities'].get(label, 0) for p in predictions) / len(predictions)
+    views = {p.get('view'): p for p in predictions}
+    front, back, detail = (views.get(view) for view in ('front', 'back', 'close_up'))
+    close_up_excluded = bool(
+        front and back and detail
+        and front.get('quality', {}).get('passed', True)
+        and back.get('quality', {}).get('passed', True)
+        and front['fabric_type'] == back['fabric_type'] != detail['fabric_type']
+    )
+    included = [front, back] if close_up_excluded else predictions
+    if all(p.get('score_kind') == 'unavailable' for p in included):
+        votes = [p['fabric_type'] for p in included]
+        disagrees = front is not None and back is not None and front['fabric_type'] != back['fabric_type']
+        return {
+            'fabric_type': 'uncertain' if disagrees else max(votes, key=votes.count),
+            'fabric_confidence': None,
+            'fabric_probabilities': {},
+            'fabric_close_up_excluded': close_up_excluded,
+            **({'fabric_uncertainty_reason': 'front_back_disagree'} if disagrees else {}),
+        }
+    labels = sorted({label for prediction in included for label in prediction['probabilities']})
+    averages = {label: sum(p['probabilities'].get(label, 0) for p in included) / len(included)
                 for label in labels}
+    if front and back and front['fabric_type'] != back['fabric_type']:
+        return {'fabric_type': 'uncertain', 'fabric_confidence': None,
+                'fabric_probabilities': averages, 'fabric_close_up_excluded': False,
+                'fabric_uncertainty_reason': 'front_back_disagree'}
     winner = max(averages, key=averages.get)
     return {'fabric_type': winner, 'fabric_confidence': round(averages[winner] * 100, 2),
-            'fabric_probabilities': averages}
+            'fabric_probabilities': averages, 'fabric_close_up_excluded': close_up_excluded}

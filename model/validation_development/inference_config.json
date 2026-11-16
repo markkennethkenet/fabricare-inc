@@ -1,0 +1,19 @@
+{
+  "classes": [
+    "cotton",
+    "denim",
+    "linen",
+    "polyester",
+    "silk",
+    "wool"
+  ],
+  "input": "RGB float32 [0,255], stretch to 224x224 using OpenCV INTER_LINEAR",
+  "preprocessing": "embedded separately in each Keras model; do not add normalization",
+  "inference": "model(rgb_batch, training=False)",
+  "probabilities": "efficientnet_weight * efficientnet_probabilities + mobilenet_weight * mobilenet_probabilities",
+  "efficientnet_weight": 0.75,
+  "mobilenet_weight": 0.25,
+  "efficientnet_model": "efficientnetb0.keras",
+  "mobilenet_model": "mobilenetv2_reference.keras",
+  "status": "development only; not deployment validated"
+}

@@ -22,6 +22,8 @@ void main() {
         userInputs: const {'condition': 'new'},
         analysis: {
           'fabric_type': 'future_fabric',
+          'model_type': 'glcm_dt',
+          'fabric_model': 'GLCM + Decision Tree',
           'fabric_confidence': 91,
           'health_score': 70,
           'condition_rating': 'Fair',
@@ -49,10 +51,15 @@ void main() {
     await reopened.open();
     expect(reopened.forUser('10').length, 2);
     final restored = reopened.forUser('10').first;
+    expect(restored.analysis['model_type'], 'glcm_dt');
+    expect(restored.fabricModelName, 'GLCM + Decision Tree');
+    expect(restored.confidencePercent, 91);
+    expect(restored.dateScanned, DateTime(2026, 10, 20));
     expect(restored.damageDetection.items.length, 2);
     expect(restored.userInputs['condition'], 'new');
-    expect(restored.healthRating,
-        'Fair'); // Display the API grade, do not recalculate.
+    expect(restored.analysis['health_score'], 70); // Preserve the raw record.
+    expect(restored.healthRating, 'Assessment unavailable');
+    expect(restored.lifespanRange, startsWith('Insufficient evidence'));
     expect(await restored.image!.exists(), isTrue);
     await reopened.delete('10', '1');
     expect(await saved.image!.exists(), isFalse);

@@ -1,243 +1,376 @@
 import 'package:flutter/material.dart';
+
 import '../../data/mock_data.dart';
+import '../../models/scan_result.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/fabric_thumb.dart';
 import '../history/garment_profile_screen.dart';
-import '../scan/scan_screen.dart';
 import '../tips/tips_screen.dart';
-import '../history/history_screen.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({
+    super.key,
+    required this.onScan,
+    required this.onHistory,
+    required this.onTips,
+    required this.onProfile,
+  });
+
+  final VoidCallback onScan;
+  final VoidCallback onHistory;
+  final VoidCallback onTips;
+  final VoidCallback onProfile;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  static final _featuredTips = AppData.tips
+      .where((tip) => tip.fabricType == 'General')
+      .toList(growable: false);
+  int _tipIndex = 0;
 
   @override
   Widget build(BuildContext context) {
     final data = AppData.instance;
-    return AnimatedBuilder(
-      animation: data,
+    final styles = Theme.of(context).textTheme;
+    final fullName = AuthService.instance.currentUser?.fullName.trim() ?? '';
+    final firstName = fullName.split(RegExp(r'\s+')).first;
+    final tip = _featuredTips[_tipIndex];
+
+    return ListenableBuilder(
+      listenable: data,
       builder: (context, _) {
-        final recent = data.history.take(2).toList();
+        final history = data.history;
+        final count = history.length;
         return SafeArea(
+          bottom: false,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
             children: [
               Row(
                 children: [
-                  const Text.rich(
-                    TextSpan(children: [
-                      TextSpan(text: 'Fabri', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
-                      TextSpan(text: 'Care', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20, color: AppColors.coral)),
-                    ]),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text.rich(
+                          TextSpan(
+                            style: TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.w800),
+                            children: [
+                              TextSpan(text: 'Fabri'),
+                              TextSpan(
+                                text: 'Care',
+                                style: TextStyle(color: AppColors.coral),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          firstName.isEmpty ? 'Welcome' : 'Welcome, $firstName',
+                          style: styles.bodyMedium
+                              ?.copyWith(color: AppColors.inkSoft),
+                        ),
+                      ],
+                    ),
                   ),
-                  const Spacer(),
-                  _circleIcon(Icons.help_outline_rounded),
-                  const SizedBox(width: 8),
-                  _circleIcon(Icons.person_outline_rounded),
+                  IconButton.filledTonal(
+                    tooltip: 'Open profile',
+                    onPressed: widget.onProfile,
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.surfaceMuted,
+                      foregroundColor: AppColors.ink,
+                    ),
+                    icon: const Icon(Icons.person_outline_rounded),
+                  ),
                 ],
               ),
-              const SizedBox(height: 4),
-              const Text('Welcome back, Mark', style: TextStyle(color: AppColors.inkSoft, fontSize: 13)),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
+              _ScanHero(onScan: widget.onScan),
+              const SizedBox(height: 12),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: _FeatureTile(
-                      icon: Icons.center_focus_strong_rounded,
-                      label: 'Scan Fabric',
-                      sub: 'Identify material & condition',
-                      bg: AppColors.mustard.withValues(alpha: 0.25),
-                      iconColor: AppColors.mustard,
-                      onTap: () => _goTo(context, const ScanScreen()),
+                    child: _HomeShortcut(
+                      icon: Icons.history_rounded,
+                      tint: const Color(0xFFEFE2C7),
+                      title: 'History',
+                      subtitle:
+                          count == 1 ? '1 saved scan' : '$count saved scans',
+                      onTap: widget.onHistory,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child: _FeatureTile(
-                      icon: Icons.menu_book_rounded,
-                      label: 'Care Guide',
-                      sub: 'Tips for every fabric type',
-                      bg: AppColors.sage.withValues(alpha: 0.18),
-                      iconColor: AppColors.sage,
-                      onTap: () => _goTo(context, const TipsScreen()),
+                    child: _HomeShortcut(
+                      icon: Icons.menu_book_outlined,
+                      tint: const Color(0xFFE5EBD9),
+                      title: 'Care guide',
+                      subtitle: 'Browse fabric tips',
+                      onTap: widget.onTips,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              _FeatureTile(
-                icon: Icons.history_rounded,
-                label: 'Scan History',
-                sub: 'Review your past scans',
-                bg: AppColors.coral.withValues(alpha: 0.12),
-                iconColor: AppColors.coral,
-                wide: true,
-                onTap: () => _goTo(context, const HistoryScreen()),
+              const SizedBox(height: 20),
+              _FeaturedTip(
+                tip: tip,
+                onOpen: () => showFabricTip(context, tip),
+                onNext: () => setState(() {
+                  _tipIndex = (_tipIndex + 1) % _featuredTips.length;
+                }),
               ),
-              const SizedBox(height: 26),
-              const Text('Quick Fabric Tip', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceMuted,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
+              if (history.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Row(
                   children: [
-                    const Icon(Icons.lightbulb_outline_rounded, color: AppColors.coral),
-                    const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        'Use clear, even lighting when scanning — it improves fabric type and condition accuracy.',
-                        style: TextStyle(fontSize: 12.5, color: AppColors.ink.withValues(alpha: 0.8), height: 1.4),
-                      ),
+                      child: Text('Recent scans', style: styles.titleLarge),
+                    ),
+                    TextButton(
+                      onPressed: widget.onHistory,
+                      child: const Text('View all'),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 26),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Recent Scans', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                  TextButton(
-                    onPressed: () => _goTo(context, const HistoryScreen()),
-                    child: const Text('See all'),
+                for (final scan in history.take(2))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 9),
+                    child: _RecentScan(scan: scan),
                   ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              if (recent.isEmpty)
-                const Text('No scans yet — try scanning a garment.', style: TextStyle(color: AppColors.inkSoft)),
-              ...recent.map((r) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => GarmentProfileScreen(result: r)),
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Row(
-                          children: [
-                            FabricThumb(image: r.image, fabricType: r.fabricType),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(r.garmentName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    r.hasHealthAssessment
-                                        ? '${r.fabricType} · Health ${r.healthScore}/100'
-                                        : '${r.fabricType} · ${r.confidencePercent}% confidence',
-                                    style: const TextStyle(color: AppColors.inkSoft, fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.chevron_right_rounded, color: AppColors.inkSoft),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )),
+              ],
             ],
           ),
         );
       },
     );
   }
+}
 
-  static void _goTo(BuildContext context, Widget screen) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
-  }
+class _ScanHero extends StatelessWidget {
+  const _ScanHero({required this.onScan});
 
-  static Widget _circleIcon(IconData icon) {
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: const BoxDecoration(color: AppColors.surfaceMuted, shape: BoxShape.circle),
-      child: Icon(icon, size: 18, color: AppColors.ink),
+  final VoidCallback onScan;
+
+  @override
+  Widget build(BuildContext context) {
+    final styles = Theme.of(context).textTheme;
+    return Material(
+      color: const Color(0xFF344B3B),
+      borderRadius: BorderRadius.circular(24),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 19, 20, 17),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Scan a garment',
+                    style: styles.headlineSmall?.copyWith(
+                      color: AppColors.surface,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const CircleAvatar(
+                  radius: 22,
+                  backgroundColor: Color(0xFF4D6753),
+                  foregroundColor: AppColors.surface,
+                  child: Icon(Icons.center_focus_strong_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Identify the fabric, check for visible damage, and get care advice.',
+              style: styles.bodyMedium?.copyWith(
+                color: const Color(0xFFE7EDDC),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: onScan,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.surface,
+                foregroundColor: AppColors.ink,
+              ),
+              icon: const Icon(Icons.camera_alt_outlined, size: 19),
+              label: const Text('Start scan'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class _FeatureTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String sub;
-  final Color bg;
-  final Color iconColor;
-  final bool wide;
-  final VoidCallback onTap;
-
-  const _FeatureTile({
+class _HomeShortcut extends StatelessWidget {
+  const _HomeShortcut({
     required this.icon,
-    required this.label,
-    required this.sub,
-    required this.bg,
-    required this.iconColor,
+    required this.tint,
+    required this.title,
+    required this.subtitle,
     required this.onTap,
-    this.wide = false,
   });
+
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
+    final styles = Theme.of(context).textTheme;
+    return _HomeCard(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: wide
-            ? Row(
-                children: [
-                  _iconCircle(),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                        const SizedBox(height: 2),
-                        Text(sub, style: const TextStyle(color: AppColors.inkSoft, fontSize: 11.5)),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded, color: AppColors.inkSoft),
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _iconCircle(),
-                  const SizedBox(height: 12),
-                  Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-                  const SizedBox(height: 2),
-                  Text(sub, style: const TextStyle(color: AppColors.inkSoft, fontSize: 11), maxLines: 2),
-                ],
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 17,
+            backgroundColor: tint,
+            foregroundColor: AppColors.ink,
+            child: Icon(icon, size: 17),
+          ),
+          const SizedBox(height: 8),
+          Text(title, style: styles.titleSmall),
+          const SizedBox(height: 2),
+          Text(subtitle,
+              style: styles.bodySmall?.copyWith(color: AppColors.inkSoft)),
+        ],
       ),
     );
   }
+}
 
-  Widget _iconCircle() {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-      child: Icon(icon, color: iconColor, size: 20),
+class _FeaturedTip extends StatelessWidget {
+  const _FeaturedTip({
+    required this.tip,
+    required this.onOpen,
+    required this.onNext,
+  });
+
+  final FabricTip tip;
+  final VoidCallback onOpen;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final styles = Theme.of(context).textTheme;
+    return _HomeCard(
+      color: const Color(0xFFF2E6CB),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.lightbulb_outline_rounded, size: 19),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Care tip', style: styles.labelLarge)),
+              IconButton(
+                tooltip: 'Next care tip',
+                onPressed: onNext,
+                icon: const Icon(Icons.next_plan_outlined),
+              ),
+            ],
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            layoutBuilder: (child, previous) => Stack(
+              alignment: Alignment.topLeft,
+              children: [...previous, if (child != null) child],
+            ),
+            child: Column(
+              key: ValueKey(tip.title),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tip.title, style: styles.titleMedium),
+                const SizedBox(height: 4),
+                Text(tip.points.first, style: styles.bodyMedium),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onOpen,
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            child: const Text('Read full tip'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentScan extends StatelessWidget {
+  const _RecentScan({required this.scan});
+
+  final ScanResult scan;
+
+  @override
+  Widget build(BuildContext context) {
+    final styles = Theme.of(context).textTheme;
+    final subtitle = scan.hasHealthAssessment
+        ? '${scan.fabricLabel} · ${scan.healthRating}'
+        : scan.fabricLabel;
+    return _HomeCard(
+      onTap: () => Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => GarmentProfileScreen(result: scan)),
+      ),
+      child: Row(
+        children: [
+          FabricThumb(image: scan.image, fabricType: scan.fabricType),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(scan.garmentName, style: styles.titleSmall),
+                Text(subtitle,
+                    style:
+                        styles.bodySmall?.copyWith(color: AppColors.inkSoft)),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.inkSoft),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeCard extends StatelessWidget {
+  const _HomeCard({
+    required this.child,
+    this.color = AppColors.surface,
+    this.onTap,
+  });
+
+  final Widget child;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Padding(padding: const EdgeInsets.all(13), child: child);
+    return Material(
+      color: color,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(17),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
     );
   }
 }

@@ -5,12 +5,13 @@ from flask import Blueprint, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 from mysql.connector import Error as MySqlError
 
-from database import get_connection
+from database import PostgresUnavailable, get_connection, insert_user
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
 @auth_bp.errorhandler(MySqlError)
+@auth_bp.errorhandler(PostgresUnavailable)
 def database_unavailable(_error):
     return jsonify({"error": "Account service is temporarily unavailable. Please try again later."}), 503
 
@@ -140,20 +141,8 @@ def register():
     password_hash = generate_password_hash(password)
     created_at = int(time.time() * 1000)
 
-    try:
-        with get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO users (full_name, email, password_hash, phone, location, created_at)
-                VALUES (%s, %s, %s, '', '', %s)
-                """,
-                (full_name, email, password_hash, created_at),
-            )
-            user_id = cursor.lastrowid
-            cursor.close()
-    except MySqlError:
-        raise
+    with get_connection() as conn:
+        user_id = insert_user(conn, full_name, email, password_hash, created_at)
 
     user = _fetch_user_by_id(user_id)
     token = _create_token(user_id)

@@ -30,5 +30,33 @@ class ImageProcessingTests(unittest.TestCase):
         self.assertEqual(voted['fabric_type'], 'new_class')
         self.assertAlmostEqual(voted['fabric_confidence'], 66.67)
 
+    def test_conflicting_close_up_cannot_override_agreeing_front_and_back(self):
+        predictions = [
+            {'view': 'front', 'fabric_type': 'polyester',
+             'probabilities': {'polyester': .55, 'denim': .45}},
+            {'view': 'back', 'fabric_type': 'polyester',
+             'probabilities': {'polyester': .52, 'denim': .48}},
+            {'view': 'close_up', 'fabric_type': 'denim',
+             'probabilities': {'polyester': .01, 'denim': .99}},
+        ]
+        result = aggregate_fabrics(predictions)
+        self.assertEqual(result['fabric_type'], 'polyester')
+        self.assertEqual(result['fabric_confidence'], 53.5)
+        self.assertTrue(result['fabric_close_up_excluded'])
+        predictions[1]['quality'] = {'passed': False}
+        self.assertFalse(aggregate_fabrics(predictions)['fabric_close_up_excluded'])
+
+    def test_disagreeing_front_and_back_are_uncertain_even_with_a_majority(self):
+        predictions = [
+            {'view': 'front', 'fabric_type': 'polyester', 'probabilities': {'polyester': 1}},
+            {'view': 'back', 'fabric_type': 'denim', 'probabilities': {'denim': 1}},
+            {'view': 'close_up', 'fabric_type': 'polyester', 'probabilities': {'polyester': 1}},
+        ]
+        result = aggregate_fabrics(predictions)
+        self.assertEqual(result['fabric_type'], 'uncertain')
+        self.assertEqual(result['fabric_uncertainty_reason'], 'front_back_disagree')
+        self.assertGreater(result['fabric_probabilities']['polyester'], .5)
+        self.assertEqual(aggregate_fabrics(predictions[:1])['fabric_type'], 'polyester')
+
 if __name__ == '__main__':
     unittest.main()

@@ -36,36 +36,42 @@ class ScanResult {
   File? get image => images.isEmpty ? null : images.first.file;
   String get imageAssetFallback => fabricType;
   String get fabricType => analysis['fabric_type'] as String? ?? 'Unknown';
+  bool get fabricUncertain => fabricType == 'uncertain';
+  String get fabricLabel => fabricUncertain ? 'Fabric uncertain' : fabricType;
   int get confidencePercent =>
       (analysis['fabric_confidence'] as num? ?? 0).round();
+  bool get hasFabricScore => analysis['fabric_confidence'] is num;
+  String? get fabricModelName => analysis['fabric_model'] as String?;
   DamageDetectionResult get damageDetection =>
       DamageDetectionResult.fromJson(analysis['damages'] as List? ?? []);
-  int? get healthScore => (analysis['health_score'] as num?)?.round();
-  bool get hasHealthAssessment => healthScore != null;
+  Map<String, bool> get damageReview =>
+      Map<String, bool>.from(analysis['damage_review'] as Map? ?? {});
+  bool get hasScientificAssessment => analysis['methodology_version'] is String;
+  Map<String, dynamic> section(String key) =>
+      Map<String, dynamic>.from(analysis[key] as Map? ?? const {});
+  bool get hasHealthAssessment => section('condition_assessment').isNotEmpty;
   bool get hasDamageDetection => analysis.containsKey('damages');
-  bool get hasConditionAssessment => hasDamageDetection;
+  bool get hasConditionAssessment => hasHealthAssessment;
   String get healthRating =>
-      analysis['condition_rating'] as String? ?? 'Not assessed';
+      section('condition_assessment')['category'] as String? ??
+      'Assessment unavailable';
   String get healthStatusNote =>
-      'Assessment of visible damage in the supplied images.';
+      section('condition_assessment')['explanation'] as String? ??
+      'Rescan the garment to get an assessment using the current method.';
   String get lifespanRange =>
-      analysis['estimated_lifespan'] as String? ?? 'Not assessed';
-  String get usageStatus =>
-      analysis['usage_status'] as String? ?? 'Usage history not supplied';
-  Map<String, dynamic> get care =>
-      Map<String, dynamic>.from(analysis['care_recommendation'] as Map? ?? {});
-  String _care(String key) => care[key] as String? ?? 'Follow care label';
-  String get washMethod => _care('care_advice');
+      'Insufficient evidence for a reliable remaining lifespan estimate.';
+  String get usageStatus => hasScientificAssessment
+      ? analysis['usage_status'] as String? ?? 'Usage history not supplied.'
+      : 'Usage history has no validated lifespan model.';
+  Map<String, dynamic> get care => section('laundry_settings');
+  String _care(String key) =>
+      care[key] as String? ?? 'Check the garment care label';
+  String get washMethod => laundryMode;
   String get dryMethod => _care('dry_method');
   String get ironLevel => _care('iron_level');
   String get bleachWarning => _care('bleach_warning');
   String get detergentSuggestion => _care('detergent');
-  String get storageTip => _care('storage');
   String get laundryMode => _care('laundry_mode');
-  String get laundryReason => _care('care_advice');
-  String? get careWarning => care['risk_warning'] as String?;
-  String? get healthRecommendation => care['care_advice'] as String?;
-  List<String> get riskWarnings => [if (careWarning != null) careWarning!];
 
   ScanResult withImages(List<ScanImage> value) => ScanResult(
       id: id,
@@ -76,6 +82,18 @@ class ScanResult {
       analysis: analysis,
       userInputs: userInputs,
       notes: notes);
+
+  ScanResult withDamageReview(
+          Map<String, dynamic> assessment, Map<String, bool> decisions) =>
+      ScanResult(
+          id: id,
+          userId: userId,
+          garmentName: garmentName,
+          images: images,
+          dateScanned: dateScanned,
+          analysis: {...analysis, ...assessment, 'damage_review': decisions},
+          userInputs: userInputs,
+          notes: notes);
 
   Map<String, dynamic> toJson() => {
         'id': id,

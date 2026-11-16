@@ -38,7 +38,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
     setState(() => _saving = true);
     try {
       await AuthService.instance.updateProfile(
@@ -53,7 +54,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             content: const Text('Profile updated successfully'),
             backgroundColor: AppColors.sage,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
         Navigator.of(context).pop();
@@ -75,131 +77,91 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final initials = AuthService.instance.currentUser?.initials ?? '?';
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Profile'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: TextButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Save', style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Edit profile')),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        bottom: false,
+        child: Form(
+          key: _formKey,
+          child: AutofillGroup(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               children: [
-                // Avatar display (initials only)
-                Center(
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 90,
-                        height: 90,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.coral,
-                          border: Border.all(color: AppColors.border, width: 3),
-                        ),
-                        child: Center(
-                          child: Text(
-                            initials,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 30,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Your initials are used as your avatar',
-                        style: TextStyle(color: AppColors.inkSoft.withValues(alpha: 0.7), fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 28),
-
-                _fieldLabel('Full Name'),
-                const SizedBox(height: 6),
                 TextFormField(
                   controller: _name,
+                  enabled: !_saving,
+                  autofillHints: const [AutofillHints.name],
                   textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    hintText: 'Juan Dela Cruz',
-                    prefixIcon: Icon(Icons.person_outline_rounded, size: 20),
+                    labelText: 'Full name',
+                    prefixIcon: Icon(Icons.person_outline_rounded),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter your full name' : null,
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Please enter your full name'
+                      : null,
                 ),
-                const SizedBox(height: 16),
-
-                _fieldLabel('Email Address'),
-                const SizedBox(height: 6),
+                const SizedBox(height: 14),
                 TextFormField(
                   controller: _email,
+                  enabled: !_saving,
+                  autofillHints: const [AutofillHints.email],
                   keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    hintText: 'you@email.com',
-                    prefixIcon: Icon(Icons.email_outlined, size: 20),
+                    labelText: 'Email address',
+                    prefixIcon: Icon(Icons.email_outlined),
                   ),
-                  validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                  validator: (value) =>
+                      value == null || !value.trim().contains('@')
+                          ? 'Enter a valid email'
+                          : null,
                 ),
-                const SizedBox(height: 16),
-
-                _fieldLabel('Phone Number'),
-                const SizedBox(height: 6),
+                const SizedBox(height: 14),
                 TextFormField(
                   controller: _phone,
+                  enabled: !_saving,
+                  autofillHints: const [AutofillHints.telephoneNumber],
                   keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    hintText: '+63 9xx xxx xxxx (optional)',
-                    prefixIcon: Icon(Icons.phone_outlined, size: 20),
+                    labelText: 'Phone number (optional)',
+                    prefixIcon: Icon(Icons.phone_outlined),
                   ),
                 ),
-                const SizedBox(height: 16),
-
-                _fieldLabel('Location'),
-                const SizedBox(height: 6),
+                const SizedBox(height: 14),
                 TextFormField(
                   controller: _location,
+                  enabled: !_saving,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(
-                    hintText: 'City, Province',
-                    prefixIcon: Icon(Icons.location_on_outlined, size: 20),
+                    labelText: 'Location (optional)',
+                    hintText: 'City, province',
+                    prefixIcon: Icon(Icons.location_on_outlined),
                   ),
-                ),
-                const SizedBox(height: 32),
-
-                ElevatedButton(
-                  onPressed: _saving ? null : _save,
-                  child: _saving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text('Save Changes'),
                 ),
               ],
             ),
           ),
         ),
       ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: ElevatedButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check_rounded),
+            label: Text(_saving ? 'Saving…' : 'Save changes'),
+          ),
+        ),
+      ),
     );
-  }
-
-  Widget _fieldLabel(String text) {
-    return Text(text, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13));
   }
 }

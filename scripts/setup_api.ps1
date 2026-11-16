@@ -1,5 +1,5 @@
 # Create the model-compatible backend runtime without changing the old venv.
-param([string]$Python312 = '')
+param([string]$Python312 = '', [switch]$Ensemble)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Python312) {
@@ -28,6 +28,10 @@ $requirements = Join-Path $root 'requirements.txt'
 if (Test-Path -LiteralPath $lock) { $requirements = $lock }
 & $python -m pip install --only-binary=:all: -r $requirements
 if ($LASTEXITCODE -ne 0) { throw 'Could not install API dependencies.' }
+if ($Ensemble) {
+  & $python -m pip install --only-binary=:all: -r (Join-Path $root 'requirements-ensemble.txt')
+  if ($LASTEXITCODE -ne 0) { throw 'Could not install ensemble dependencies.' }
+}
 & $python -m pip check
 if ($LASTEXITCODE -ne 0) { throw 'API dependencies are inconsistent.' }
 Write-Host "API environment ready: $python"

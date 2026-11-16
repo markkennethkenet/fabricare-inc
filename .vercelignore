@@ -25,6 +25,7 @@ web/dist/
 !db_config.py
 !fabricare_api.py
 !image_processing.py
+!model_analysis.py
 !model_runtime.py
 !serve_api.py
 !model/

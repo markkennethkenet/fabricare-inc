@@ -15,3 +15,7 @@ class DbConfig:
     database = os.getenv("MYSQL_DATABASE", "fabricare")
     ssl_ca = os.getenv("MYSQL_SSL_CA", "")
     ssl_ca_pem = os.getenv("MYSQL_SSL_CA_PEM", "")
+
+    postgres_dsn = os.getenv("POSTGRES_DSN", "")
+    postgres_ssl_ca = os.getenv("POSTGRES_SSL_CA", "")
+    postgres_ssl_ca_pem = os.getenv("POSTGRES_SSL_CA_PEM", "")

@@ -71,6 +71,7 @@ __pycache__/
 # Local deployment metadata and generated web output
 /.vercel/
 /web/dist/
+/.agents/
 
 # Local research image archives and assembled training data
 /dataset_sources/raw/
@@ -83,4 +84,18 @@ __pycache__/
 /model/**/*.jpg
 /model/**/*.jpeg
 /model/**/*.png
+/model/improved_20261103/
+/model/mobilenet_20261103/
+/model/preliminary_20261103/
+/model/validation_development/train_validation_manifest.json
+/model/validation_development/validation_predictions.npz
 /research/output/
+
+# Checked-in models used by the API
+!/model/best_decision_tree.joblib
+!/model/glcm_models/glcm_decision_tree.joblib
+!/model/glcm_models/glcm_svm.joblib
+!/model/mobilenetv2_6class/mobilenetv2_stage2_best.keras
+!/model/mobilenet_20261110/fabric_mobilenetv2.keras
+!/model/validation_development/efficientnetb0.keras
+!/model/validation_development/mobilenetv2_reference.keras

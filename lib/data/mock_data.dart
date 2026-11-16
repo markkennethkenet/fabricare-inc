@@ -119,6 +119,19 @@ class AppData extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<ScanResult> saveDamageReview(ScanResult scan,
+      Map<String, dynamic> assessment, Map<String, bool> decisions) async {
+    final store = _store;
+    if (store == null || _userId != scan.userId) {
+      throw StateError('Sign in to the scan account to save this review.');
+    }
+    final current = history.firstWhere((result) => result.id == scan.id);
+    final reviewed = current.withDamageReview(assessment, decisions);
+    await store.put(reviewed);
+    notifyListeners();
+    return reviewed;
+  }
+
   Future<void> deleteScan(String id) async {
     if (_store == null || _userId == null) return;
     await _store!.delete(_userId!, id);
@@ -147,7 +160,7 @@ class AppData extends ChangeNotifier {
       fabricType: 'Silk',
       icon: Icons.water_drop_outlined,
       points: [
-        'Hand wash in cold water with a mild detergent.',
+        'If the care label allows washing, hand wash in cold water with a mild detergent.',
         'Never wring — roll in a towel to remove excess water.',
         'Air dry away from direct sunlight.',
       ],
@@ -160,6 +173,36 @@ class AppData extends ChangeNotifier {
         'Wash inside-out in cold water to protect color.',
         'Avoid frequent washing — spot clean when possible.',
         'Air dry to prevent shrinkage and fiber stress.',
+      ],
+    ),
+    FabricTip(
+      title: 'How to care for Linen',
+      fabricType: 'Linen',
+      icon: Icons.texture_outlined,
+      points: [
+        'If machine washing is allowed, use a gentle cycle.',
+        'Give linen room in the drum to reduce deep creases.',
+        'Reshape the garment while damp and dry as directed on the label.',
+      ],
+    ),
+    FabricTip(
+      title: 'How to care for Polyester',
+      fabricType: 'Polyester',
+      icon: Icons.layers_outlined,
+      points: [
+        'Use cool water and check the label for the recommended cycle.',
+        'Air dry or use low heat if the label allows tumble drying.',
+        'Use a low iron setting if ironing is permitted.',
+      ],
+    ),
+    FabricTip(
+      title: 'How to care for Wool',
+      fabricType: 'Wool',
+      icon: Icons.ac_unit_outlined,
+      points: [
+        'Check whether the garment is washable before getting it wet.',
+        'Use a wool detergent and the wash method specified on the label.',
+        'Lay washable knits flat to dry so they hold their shape.',
       ],
     ),
     FabricTip(

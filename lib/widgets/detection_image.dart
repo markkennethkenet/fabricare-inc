@@ -5,8 +5,12 @@ import '../models/scan_result.dart';
 class DetectionImage extends StatelessWidget {
   final ScanResult scan;
   final int imageIndex;
+  final String? focusDamageId;
   const DetectionImage(
-      {super.key, required this.scan, required this.imageIndex});
+      {super.key,
+      required this.scan,
+      required this.imageIndex,
+      this.focusDamageId});
 
   @override
   Widget build(BuildContext context) {
@@ -16,8 +20,13 @@ class DetectionImage extends StatelessWidget {
         : const {};
     final width = (metadata['width'] as num? ?? 1).toDouble();
     final height = (metadata['height'] as num? ?? 1).toDouble();
-    final items = scan.damageDetection.items
-        .where((i) => i.imageIndex == imageIndex && i.bbox.length == 4);
+    final review = scan.damageReview;
+    final items = scan.damageDetection.items.where((i) =>
+        i.imageIndex == imageIndex &&
+        i.bbox.length == 4 &&
+        (focusDamageId == null
+            ? review[i.id] != false
+            : i.id == focusDamageId));
     return AspectRatio(
       aspectRatio: width / height,
       child: LayoutBuilder(

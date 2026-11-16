@@ -9,7 +9,9 @@ scikit-image==0.26.0
 scikit-learn==1.6.1
 joblib==1.5.3
 numpy==2.2.6
+tensorflow==2.21.0
 scipy==1.15.3
 Pillow==12.3.0
 mysql-connector-python==9.7.0
 python-dotenv==1.2.2
+pi-heif==1.4.0

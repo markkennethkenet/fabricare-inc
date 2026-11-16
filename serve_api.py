@@ -13,7 +13,7 @@ def main():
         init_schema()
     except Exception:
         # Do not expose connection details or credentials in hosted logs.
-        logging.error("MySQL initialization failed. Check the server's MYSQL_* variables.")
+        logging.error("Database initialization failed. Check the configured database and TLS settings.")
         raise SystemExit(1) from None
 
     # A single worker serializes access to the shared inference models.
