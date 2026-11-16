@@ -12,9 +12,11 @@ def main():
     try:
         init_schema()
     except Exception:
+        # Scanning does not need the database, so keep serving: account routes answer 503 and
+        # /health/ready reports database_connected=false until the database responds.
         # Do not expose connection details or credentials in hosted logs.
-        logging.error("Database initialization failed. Check the configured database and TLS settings.")
-        raise SystemExit(1) from None
+        logging.error("Database initialization failed. Check the configured database and TLS settings. "
+                      "Scanning stays available; sign-in is unavailable until the database responds.")
 
     # A single worker serializes access to the shared inference models.
     serve(app, host="0.0.0.0", port=port, threads=1,

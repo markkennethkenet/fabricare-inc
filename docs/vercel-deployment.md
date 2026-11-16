@@ -98,9 +98,11 @@ than a `railway.internal` address. Review the provider's encryption and
 connection settings before production use. Database setup and provider costs
 are not verified or approved by this document.
 
-`serve_api.py` initializes the existing schema and stops startup if MySQL is
-unavailable. Existing tables and records are preserved. `/api/health/ready`
-returns 200 only when the API can reach MySQL.
+`serve_api.py` initializes the existing schema at startup. If the database is
+unavailable it logs an error and keeps serving, so scanning still works while
+account routes answer 503. (It used to exit, which made every API route fail with
+FUNCTION_INVOCATION_FAILED.) Existing tables and records are preserved.
+`/api/health/ready` returns 200 only when the API can reach the database.
 
 ## Review and verification
 
