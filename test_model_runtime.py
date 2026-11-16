@@ -107,6 +107,38 @@ def _cnn(scores_by_view, tta):
     return classifier
 
 
+class HalfSizeCnnTests(unittest.TestCase):
+    def test_sixteen_bit_export_loads_and_matches_the_full_model(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        import tensorflow as tf
+        from model_runtime import FabricCNN
+
+        tf.keras.utils.set_random_seed(3)
+        inputs = tf.keras.Input((224, 224, 3))
+        x = tf.keras.layers.Rescaling(1 / 127.5, offset=-1)(inputs)
+        x = tf.keras.layers.Conv2D(4, 3, strides=4, activation="relu")(x)
+        x = tf.keras.layers.GlobalAveragePooling2D()(x)
+        outputs = tf.keras.layers.Dense(6, activation="softmax")(x)
+        model = tf.keras.Model(inputs, outputs)
+        directory = Path(tempfile.mkdtemp())
+        (directory / FabricCNN.architecture).write_text(model.to_json(), encoding="utf-8")
+        np.savez_compressed(directory / FabricCNN.half_weights, *[w.astype(np.float16) for w in model.get_weights()])
+        (directory / "class_names.json").write_text(json.dumps(list(SIX_FABRIC_LABELS)))
+        (directory / "model_info.json").write_text(json.dumps({"name": "Test CNN (V4)", "test_accuracy": 86.4}))
+
+        loaded = FabricCNN(directory)
+        self.assertEqual(loaded.name, "Test CNN (V4)")
+        self.assertEqual(loaded.test_accuracy, 86.4)
+        photo = _png(Image.fromarray(np.random.default_rng(0).integers(0, 255, (120, 90, 3), dtype=np.uint8)))
+        batch = prepare_mobilenet_v2_image(photo)
+        np.testing.assert_allclose(np.asarray(loaded.model(batch)), np.asarray(model(batch)), atol=2e-3)
+        photo.seek(0)
+        self.assertIn(loaded.classify(photo)["fabric_type"], SIX_FABRIC_LABELS)
+
+
 class MirrorAveragingTests(unittest.TestCase):
     def test_tta_batch_adds_the_horizontal_mirror(self):
         pixels = np.zeros((224, 224, 3), dtype=np.uint8)

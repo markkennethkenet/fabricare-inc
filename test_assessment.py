@@ -55,6 +55,19 @@ class AssessmentTests(unittest.TestCase):
         unavailable = assess("cotton", [], detector_available=False, today=today)
         self.assertIsNone(unavailable["health_score"])
 
+    def test_low_score_candidates_stay_for_review_without_changing_health_or_lifespan(self):
+        today = date(2026, 11, 16)
+        weak = assess("cotton", [{"type": "hole", "confidence": 60, "area_ratio": 0.05}],
+                      {"condition": "new"}, today=today)
+        clean = assess("cotton", [], {"condition": "new"}, today=today)
+        self.assertEqual([o["type"] for o in weak["condition_assessment"]["observations"]], ["hole"])
+        self.assertEqual(weak["health_score"], 100)
+        self.assertEqual(weak["lifespan"]["remaining_months"], clean["lifespan"]["remaining_months"])
+        confirmed = assess("cotton", [{"type": "hole", "confidence": 60, "area_ratio": 0.05}],
+                           {"condition": "new"}, today=today, reviewed=True)
+        self.assertEqual(confirmed["health_score"], 60)
+        self.assertEqual(confirmed["lifespan"]["remaining_months"], 6)
+
     def test_only_supported_candidates_and_reviewed_observations(self):
         findings = [{"type": name, "area_ratio": .12, "confidence": 95}
                     for name in ("stain", "pilling", "hole", "wrinkle", "fading", "fuzzing", "tear")]

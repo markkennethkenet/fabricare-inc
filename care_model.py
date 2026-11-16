@@ -20,8 +20,20 @@ from PIL import Image, ImageOps
 FABRICS = ("cotton", "denim", "linen", "polyester", "silk", "wool")
 DAMAGE_TYPES = ("hole", "needlemark", "pilling", "stain")
 GLCM_PROPERTIES = ("contrast", "dissimilarity", "homogeneity", "energy", "correlation", "ASM")
-# A finding counts toward care when the detector score reaches this value (percent).
-DAMAGE_MIN_CONFIDENCE = 40.0
+# Detector score (percent) a finding needs before it changes care, health or lifespan on its own.
+# Chosen from the V4 run on the mostly undamaged V3 photos: at these levels the YOLOv8 detector flags
+# holes on 3.4% of photos, stains on 4.2%, pilling on 5.0% and needle marks on under 0.1%, against 35.1%,
+# 15.7%, 9.2% and 3.0% at a 40% score. Weaker findings remain visible for the user to review, and a
+# finding the user confirms always counts.
+DAMAGE_MIN_CONFIDENCE = {"hole": 90.0, "stain": 70.0, "pilling": 70.0, "needlemark": 60.0}
+
+
+def finding_counts(kind, confidence, confirmed=False):
+    """True when a damage finding should drive care, health or lifespan automatically."""
+    if confirmed:
+        return True
+    threshold = DAMAGE_MIN_CONFIDENCE.get(kind)
+    return threshold is not None and isinstance(confidence, (int, float)) and confidence >= threshold
 # Colour thresholds on 0–255 luminance and 0–1 saturation.
 DARK_LUMINANCE = 90.0
 DARK_PIXEL_LUMINANCE = 70.0
@@ -56,15 +68,14 @@ def _detections_by_type(detections):
     grouped = {kind: [] for kind in DAMAGE_TYPES}
     for detection in detections or []:
         kind = detection.get("type")
-        score = detection.get("confidence")
-        if kind in grouped and isinstance(score, (int, float)) and score >= DAMAGE_MIN_CONFIDENCE:
+        if kind in grouped and finding_counts(kind, detection.get("confidence"), detection.get("confirmed") is True):
             area = detection.get("area_ratio")
             grouped[kind].append(float(area) if isinstance(area, (int, float)) else 0.0)
     return grouped
 
 
 def damage_features(detections):
-    """Count and largest box share of each damage type above the care threshold."""
+    """Count and largest box share of each damage type that passes DAMAGE_MIN_CONFIDENCE."""
     grouped = _detections_by_type(detections)
     features = {}
     for kind in DAMAGE_TYPES:

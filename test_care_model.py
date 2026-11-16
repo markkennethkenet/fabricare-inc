@@ -25,7 +25,7 @@ def row(fabric, detections=(), color=(230, 225, 215)):
                        glcm_summary(np.arange(72, dtype=float)))
 
 
-def finding(kind, confidence=80, area=0.02):
+def finding(kind, confidence=95, area=0.02):
     return {"type": kind, "confidence": confidence, "area_ratio": area}
 
 
@@ -35,12 +35,21 @@ class CareFeatureTests(unittest.TestCase):
         self.assertEqual(list(values), FEATURE_NAMES)
         self.assertEqual(care_model.feature_vector(values).shape, (1, len(FEATURE_NAMES)))
 
-    def test_damage_counts_only_confident_findings(self):
-        features = damage_features([finding("hole", 90, 0.03), finding("hole", 20, 0.5), finding("stain", 45, 0.1)])
-        self.assertEqual(features["hole_count"], 1)
+    def test_damage_counts_only_confident_or_confirmed_findings(self):
+        features = damage_features([finding("hole", 92, 0.03), finding("hole", 85, 0.5), finding("stain", 70, 0.1),
+                                    finding("pilling", 65), {**finding("pilling", 30), "confirmed": True}])
+        self.assertEqual(features["hole_count"], 1)  # 85% is below the 90% hole threshold
         self.assertAlmostEqual(features["hole_max_area"], 0.03)
         self.assertEqual(features["stain_count"], 1)
-        self.assertEqual(features["pilling_count"], 0)
+        self.assertEqual(features["pilling_count"], 1)  # only the confirmed one
+        self.assertEqual(features["needlemark_count"], 0)
+
+    def test_thresholds_match_the_detector_study(self):
+        self.assertEqual(care_model.DAMAGE_MIN_CONFIDENCE,
+                         {"hole": 90.0, "stain": 70.0, "pilling": 70.0, "needlemark": 60.0})
+        self.assertTrue(care_model.finding_counts("hole", 20, confirmed=True))
+        self.assertFalse(care_model.finding_counts("wrinkle", 99))
+        self.assertFalse(care_model.finding_counts("stain", None))
 
     def test_colour_features_separate_dark_and_light(self):
         dark, light = color_features(png((20, 20, 30))), color_features(png((235, 230, 220)))

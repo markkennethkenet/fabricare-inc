@@ -4,6 +4,7 @@ import math
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
+from care_model import finding_counts
 from model_analysis import confidence_threshold
 
 CONFIG = json.loads((Path(__file__).parent / "assessment_config.json").read_text(encoding="utf-8"))
@@ -378,13 +379,15 @@ def health_assessment(condition):
     """Score the visible condition from 0 to 100 using the damage findings.
 
     Each finding type removes points once; confirmed findings count fully and candidates count about half.
+    Candidates below care_model.DAMAGE_MIN_CONFIDENCE are left for review and remove nothing.
     Findings covering under 2% of the photo remove 70% of the points. The weights are FabriCare assumptions.
     """
     if not condition["detector_available"] and not condition["observations"]:
         return None
     deductions = []
     for kind, (candidate_points, confirmed_points) in HEALTH_DEDUCTIONS.items():
-        items = [item for item in condition["observations"] if item["type"] == kind]
+        items = [item for item in condition["observations"]
+                 if item["type"] == kind and finding_counts(kind, item.get("model_score"), item["confirmed"])]
         if not items:
             continue
         confirmed = any(item["confirmed"] for item in items)
@@ -438,7 +441,9 @@ def lifespan_estimate(fabric_type, condition, inputs, today=None):
                         "source": "D"})
     remaining = max(0.0, total - age) * 12
     confirmed = {item["type"] for item in condition["observations"] if item["confirmed"]}
-    pending = {item["type"] for item in condition["observations"] if not item["confirmed"]}
+    # Low-score candidates are shown for review but do not shorten the estimate.
+    pending = {item["type"] for item in condition["observations"]
+               if not item["confirmed"] and finding_counts(item["type"], item.get("model_score"))}
     for kind, (candidate_factor, confirmed_factor) in DAMAGE_LIFESPAN_FACTOR.items():
         if kind in confirmed and confirmed_factor is not None:
             factor = confirmed_factor

@@ -194,8 +194,7 @@ class FabricMobileNetV2:
 
     def __init__(self, directory):
         labels_path = directory / "class_names.json"
-        model_path = directory / self.filename
-        for path in (labels_path, model_path):
+        for path in (labels_path, *self.model_files(directory)):
             if not path.is_file():
                 raise FileNotFoundError(f"Missing MobileNetV2 file: {path.name}.")
         try:
@@ -207,16 +206,22 @@ class FabricMobileNetV2:
                 or set(self.labels) != MOBILENET_V2_CLASSES):
             raise RuntimeError("class_names.json must list each of the six supported fabrics once, in model output order.")
         try:
-            import tensorflow as tf
-
-            self.model = tf.keras.models.load_model(model_path, compile=False)
+            self.model = self.load_network(directory)
         except Exception as error:
-            raise RuntimeError("Cannot load the MobileNetV2 export. Check the model file and install the "
+            raise RuntimeError("Cannot load the CNN export. Check the model files and install the "
                                "pinned API runtime with scripts/setup_api.ps1.") from error
         if (tuple(self.model.input_shape[1:]) != (224, 224, 3)
                 or tuple(self.model.output_shape[1:]) != (len(self.labels),)):
             raise RuntimeError("MobileNetV2 must accept 224 x 224 RGB and return six scores.")
         self.tta = fabric_tta_enabled()
+
+    def model_files(self, directory):
+        return [directory / self.filename]
+
+    def load_network(self, directory):
+        import tensorflow as tf
+
+        return tf.keras.models.load_model(directory / self.filename, compile=False)
 
     def classify(self, image_path):
         batch = (prepare_mobilenet_v2_tta_batch(image_path) if self.tta
@@ -239,9 +244,15 @@ class FabricMobileNetV2:
 
 
 class FabricCNN(FabricMobileNetV2):
-    """A retrained CNN export described by its own model_info.json (V4 training notebook)."""
+    """A retrained CNN export described by its own model_info.json (V4 training notebook).
+
+    The export is either a full Keras file, or an architecture file with 16-bit weights. The 16-bit form
+    keeps large backbones under GitHub's 100 MB file limit; weights are cast back to 32-bit when loaded.
+    """
 
     filename = "fabric_cnn.keras"
+    architecture = "fabric_cnn_architecture.json"
+    half_weights = "fabric_cnn_weights_fp16.npz"
 
     def __init__(self, directory):
         info = read_model_info(directory)
@@ -250,6 +261,22 @@ class FabricCNN(FabricMobileNetV2):
         self.test_accuracy = info.get("test_accuracy")
         self.test_macro_f1 = info.get("test_macro_f1")
         super().__init__(directory)
+
+    def model_files(self, directory):
+        if (directory / self.filename).is_file():
+            return [directory / self.filename]
+        return [directory / self.architecture, directory / self.half_weights]
+
+    def load_network(self, directory):
+        import tensorflow as tf
+
+        if (directory / self.filename).is_file():
+            return tf.keras.models.load_model(directory / self.filename, compile=False)
+        model = tf.keras.models.model_from_json((directory / self.architecture).read_text(encoding="utf-8"))
+        with np.load(directory / self.half_weights) as stored:
+            weights = [stored[f"arr_{i}"].astype(np.float32) for i in range(len(stored.files))]
+        model.set_weights(weights)
+        return model
 
 
 def read_model_info(directory):

@@ -505,6 +505,12 @@ def care_rows(items, fabrics=None):
             print("care cases", n, flush=True)
     return out
 
+scores = {kind: np.asarray([max([d["confidence"] for d in damage_for(item) if d["type"] == kind] or [0])
+                            for split in SPLITS for item in by_split[split]]) for kind in care_model.DAMAGE_TYPES}
+print("Share of photos flagged by the detector, by minimum score (care_model.DAMAGE_MIN_CONFIDENCE uses):")
+for kind, values in scores.items():
+    print(f"  {kind:10s}", {t: f"{(values >= t).mean():.1%}" for t in (40, 50, 60, 70, 80, 90)},
+          "| threshold", care_model.DAMAGE_MIN_CONFIDENCE[kind])
 care = {split: care_rows(by_split[split]) for split in SPLITS}
 care_x = {s: np.vstack([care_model.feature_vector(r) for r in care[s]]) for s in SPLITS}
 care_y = {s: np.asarray([care_model.CLASSES.index(care_model.reference_laundry_mode(r)[0]) for r in care[s]])
@@ -577,14 +583,25 @@ if export.exists():
 (export / "glcm_models").mkdir()
 (export / "care").mkdir()
 
-shutil.copy2(RUN / "cnn" / best_cnn / "best.keras", export / "fabric_cnn" / "fabric_cnn.keras")
+# Store the CNN as an architecture file plus 16-bit weights: large backbones stay under GitHub's 100 MB
+# file limit. The API casts the weights back to 32-bit; the model is re-tested in that exact form here.
+full_cnn = tf.keras.models.load_model(RUN / "cnn" / best_cnn / "best.keras", compile=False)
+half_weights = [w.astype(np.float16) for w in full_cnn.get_weights()]
+rebuilt = tf.keras.models.model_from_json(full_cnn.to_json())
+rebuilt.set_weights([w.astype(np.float32) for w in half_weights])
+half_check = evaluate_cnn(rebuilt)
+np.savez_compressed(export / "fabric_cnn" / "fabric_cnn_weights_fp16.npz", *half_weights)
+(export / "fabric_cnn" / "fabric_cnn_architecture.json").write_text(full_cnn.to_json())
 (export / "fabric_cnn" / "class_names.json").write_text(json.dumps(CLASS_NAMES, indent=2))
-best_test = final["cnn"][best_cnn]["mirror_average"]["test"]
+best_test = half_check["mirror_average"]["test"]
+print("16-bit CNN test accuracy:", f"{best_test['accuracy']:.2%}", "| 32-bit:",
+      f"{final['cnn'][best_cnn]['mirror_average']['test']['accuracy']:.2%}")
 (export / "fabric_cnn" / "model_info.json").write_text(json.dumps({
     "name": f"{BACKBONES[best_cnn][0]} (V4)", "backbone": best_cnn,
     "validation_accuracy": round(cnn_results[best_cnn]["valid"]["accuracy"] * 100, 2),
     "test_accuracy": round(best_test["accuracy"] * 100, 2), "test_macro_f1": round(best_test["macro_f1"], 4),
-    "inference": "mirror_average", "input": "224x224 RGB, 0-255, gray (127) padding"}, indent=2))
+    "weights": "float16", "inference": "mirror_average", "input": "224x224 RGB, 0-255, gray (127) padding"},
+    indent=2))
 shutil.copy2(RUN / "glcm" / "glcm_decision_tree.joblib", export / "glcm_models" / "glcm_decision_tree.joblib")
 shutil.copy2(RUN / "glcm" / "glcm_svm.joblib", export / "glcm_models" / "glcm_svm.joblib")
 (export / "glcm_models" / "metrics.json").write_text(json.dumps({
@@ -603,7 +620,9 @@ report = {
     "selected_cnn": best_cnn, "cnn_validation": {k: {kk: v[kk] for kk in ("valid", "valid_single_view")}
                                                  for k, v in cnn_results.items()},
     "glcm_selection": {"decision_tree": glcm_dt_info, "svm": glcm_svm_info},
-    "fabric_test": final, "care": care_results, "selected_care_model": best_care,
+    "fabric_test": final, "selected_cnn_16bit_test": half_check,
+    "care": care_results, "selected_care_model": best_care,
+    "care_damage_thresholds": care_model.DAMAGE_MIN_CONFIDENCE,
     "versions": {n: importlib.metadata.version(n) for n in ("tensorflow", "keras", "scikit-learn", "scikit-image",
                                                             "joblib", "ultralytics", "numpy")},
 }
