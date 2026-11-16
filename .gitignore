@@ -40,16 +40,47 @@ app.*.symbols
 app.*.map.json
 
 # Android Studio will place build artifacts here
+/android/build/
 /android/app/debug
 /android/app/profile
 /android/app/release
+*.apk
+*.aab
 
-# Local MySQL credentials
+# Local credentials, signing keys, and database backups
 .env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+key.properties
+/backups/
 
-# Isolated Python 3.12 backend runtime
+# Local Python environments and caches
+/.venv/
 /.venv-api/
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
 
 # Local deployment metadata and generated web output
 /.vercel/
 /web/dist/
+
+# Local research image archives and assembled training data
+/dataset_sources/raw/
+/dataset_sources/extracted/
+/dataset_sources/prepared_six_class/
+/dataset_sources/prepared_damage_yolov8/
+/model/**/*.keras
+/model/**/*.joblib
+/model/**/*.zip
+/model/**/*.jpg
+/model/**/*.jpeg
+/model/**/*.png
+/research/output/
