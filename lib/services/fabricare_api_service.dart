@@ -164,6 +164,9 @@ class FabricCareApiService {
     return result;
   }
 
+  Future<Map<String, dynamic>> askLocalVision(ScanImage front) =>
+      _upload('/vision-opinion', [front]);
+
   Future<Map<String, dynamic>> _upload(String endpoint, List<ScanImage> images,
       {bool legacy = false, Map<String, String> fields = const {}}) async {
     final request = http.MultipartRequest(
@@ -183,8 +186,11 @@ class FabricCareApiService {
     }
     final client = http.Client();
     final timer = Stopwatch()..start();
-    final step =
-        endpoint == '/quality' ? 'Photo quality check' : 'Scan analysis';
+    final step = switch (endpoint) {
+      '/quality' => 'Photo quality check',
+      '/vision-opinion' => 'Qwen review',
+      _ => 'Scan analysis',
+    };
     debugPrint(
         'FabriCare POST ${request.url} photos=${images.length} bytes=${request.contentLength}');
     try {

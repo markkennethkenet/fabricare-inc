@@ -1,15 +1,20 @@
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from pathlib import Path
+import base64
+import io
 import tempfile
 import json
 import os
 import platform
 from threading import Lock
 from time import monotonic
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 import sklearn
 import cv2
 import numpy as np
+from PIL import Image, ImageOps, UnidentifiedImageError
 from skimage.feature import graycomatrix, graycoprops
 from ultralytics import YOLO
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -460,6 +465,62 @@ def analyze():
 @app.post("/predict/hybrid")
 def predict_hybrid():
     return analyze_upload(hybrid=True)
+
+
+@app.post("/vision-opinion")
+def vision_opinion():
+    try:
+        uploads, _ = uploaded_views()
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    if len(uploads) != 1 or uploads[0][0] != "front":
+        return jsonify({"error": "Provide one front photo for Qwen."}), 400
+    try:
+        with Image.open(uploads[0][1].stream) as source:
+            if source.format not in {"JPEG", "PNG"} or source.width * source.height > 24_000_000:
+                raise ValueError("Unsupported photo.")
+            photo = ImageOps.exif_transpose(source).convert("RGB")
+        photo.thumbnail((960, 960), Image.Resampling.LANCZOS)
+        with io.BytesIO() as encoded:
+            photo.save(encoded, format="JPEG", quality=92)
+            image = base64.b64encode(encoded.getvalue()).decode("ascii")
+    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
+        return jsonify({"error": "Use a readable JPG or PNG front photo."}), 400
+    labels = [*SIX_FABRIC_LABELS, "uncertain"]
+    payload = {
+        "model": "qwen3-vl:2b", "stream": False,
+        "messages": [{
+            "role": "user", "images": [image],
+            "content": (
+                "Identify the fabric of the main garment. Choose cotton, denim, linen, polyester, "
+                "silk, wool, or uncertain. Choose uncertain when visual clues are insufficient. "
+                'Keep reasoning brief and return a JSON object such as {"fabric":"uncertain"}.'
+            ),
+        }],
+        "format": {
+            "type": "object",
+            "properties": {"fabric": {"type": "string", "enum": labels}},
+            "required": ["fabric"],
+        },
+        "options": {"temperature": 0, "num_ctx": 4096, "num_predict": 1536},
+    }
+    query = Request("http://127.0.0.1:11434/api/chat",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"})
+    try:
+        with urlopen(query, timeout=90) as response:
+            answer = json.load(response)
+    except (OSError, URLError, ValueError):
+        return jsonify({"error": "Qwen is unavailable. Check that Ollama is running on the PC."}), 503
+    try:
+        content = answer["message"]["content"]
+        label = json.loads(content)["fabric"] if content.strip() else None
+    except (KeyError, ValueError, AttributeError, TypeError):
+        label = None
+    return jsonify({
+        "model": "Qwen3-VL 2B",
+        "fabric_type": label if label in labels else None,
+    })
 
 
 @app.post("/review-damage")

@@ -23,6 +23,24 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   late ScanResult result = widget.result;
   late final Map<String, bool> _decisions = result.damageReview;
   bool _saving = false;
+  bool _checkingVision = false;
+  Map<String, dynamic>? _visionOpinion;
+  String? _visionError;
+
+  Future<void> _askVision(ScanImage front) async {
+    setState(() {
+      _checkingVision = true;
+      _visionError = null;
+    });
+    try {
+      final opinion = await FabricCareApiService.instance.askLocalVision(front);
+      if (mounted) setState(() => _visionOpinion = opinion);
+    } catch (error) {
+      if (mounted) setState(() => _visionError = error.toString());
+    } finally {
+      if (mounted) setState(() => _checkingVision = false);
+    }
+  }
 
   void _viewFinding(DamageItem item) {
     showDialog<void>(
@@ -287,6 +305,9 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     final secondOpinion = result.section('fabric_second_opinion');
     final secondLabel = secondOpinion['fabric_type'];
     final secondModel = secondOpinion['model'];
+    final frontPhoto =
+        result.images.where((photo) => photo.view == 'front').firstOrNull;
+    final visionLabel = _visionOpinion?['fabric_type'];
 
     return Scaffold(
       appBar: AppBar(title: const Text('FabriCare Result')),
@@ -325,6 +346,40 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     _ => 'The second model was unavailable for this scan.',
                   },
                 ]),
+              ),
+            if (frontPhoto != null)
+              SectionCard(
+                title: 'Local Qwen opinion',
+                icon: Icons.visibility_outlined,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Qwen3-VL reviews the front photo on your PC.'),
+                    if (_checkingVision) ...[
+                      const LinearProgressIndicator(),
+                      const Text('Qwen is reviewing the photo…'),
+                    ] else if (_visionError != null)
+                      Text(_visionError!)
+                    else if (_visionOpinion != null)
+                      Text(switch (visionLabel) {
+                        null => 'Qwen returned no final answer.',
+                        'uncertain' => 'Qwen was uncertain about the fabric.',
+                        _ when result.fabricUncertain =>
+                          'Qwen suggests $visionLabel. FabriCare is uncertain.',
+                        _ when visionLabel == result.fabricType =>
+                          'Both suggest $visionLabel. Check the fiber label to confirm.',
+                        _ =>
+                          'Qwen suggests $visionLabel. FabriCare suggests ${result.fabricType}. Check the fiber label.',
+                      }),
+                    OutlinedButton(
+                      onPressed:
+                          _checkingVision ? null : () => _askVision(frontPhoto),
+                      child: Text(_visionOpinion == null
+                          ? 'Ask Qwen'
+                          : 'Run Qwen again'),
+                    ),
+                  ],
+                ),
               ),
             SectionCard(
               title: 'Visible Fabric Condition',
