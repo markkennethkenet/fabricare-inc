@@ -93,7 +93,11 @@ class ApiContractTests(unittest.TestCase):
                 self.assertIn(care['laundry_mode'], care_model.CLASSES)
                 self.assertTrue(care['label'] and care['reasons'])
                 self.assertIsInstance(care['alerts'], list)
-                cited = {ref for entry in care['reasons'] + care['alerts'] for ref in entry['reference_ids']}
+                self.assertTrue(1 <= len(care['care_tips']) <= 3 and 1 <= len(care['laundry_tips']) <= 3)
+                self.assertTrue(care['headline'])
+                self.assertEqual(care['provided_by'], f'Decision Tree care model · {name} fabric result')
+                cited = {ref for entry in care['reasons'] + care['alerts'] + care['care_tips'] + care['laundry_tips']
+                         for ref in entry['reference_ids']}
                 self.assertTrue(cited <= {ref['id'] for ref in body['references']})
                 self.assertEqual(body['schema_version'], 3)
                 self.assertIn('care_recommendation', body)
@@ -104,6 +108,8 @@ class ApiContractTests(unittest.TestCase):
                     self.assertEqual(body['per_image'][0]['score_kind'], 'svm_platt_probability')
                 if model_type == 'cnn':
                     self.assertEqual(body['per_image'][0]['inference_views'], 2)
+                    # Label smoothing caps the V4 CNN's scores near 92%, so it has its own threshold.
+                    self.assertEqual(body['fabric']['threshold_percent'], 60)
         self.fabric_mock.assert_not_called()
 
     def test_invalid_model_type_is_rejected(self):
@@ -211,6 +217,31 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.get_json()["health_score"], 100)
         data['findings'][1]['confirmed'] = 'yes'
         self.assertEqual(self.client.post('/review-damage', json=data).status_code, 400)
+
+    def test_damage_review_refreshes_the_care_advice(self):
+        features = {name: 0.5 for name in self.api.IMAGE_CARE_FEATURES}
+        features.update(luminance_mean=200.0, saturation_mean=0.05, dark_fraction=0.0)
+        data = {'fabric_type': 'cotton', 'fabric_confidence': 75, 'fabric_review_threshold': 60,
+                'fabric_model': 'ConvNeXt-Tiny (V4)', 'care_features': features,
+                'findings': [{'type': 'hole', 'area_ratio': .02, 'confirmed': True}]}
+        result = self.client.post('/review-damage', json=data).get_json()
+        self.assertFalse(result['fabric_needs_confirmation'])  # 75% passes the model's 60% threshold
+        self.assertTrue(result['ai_care']['care_tips'][0]['text'].startswith('Mend the opening'))
+        self.assertIn('ConvNeXt-Tiny (V4)', result['ai_care']['provided_by'])
+        data['findings'][0]['confirmed'] = False
+        result = self.client.post('/review-damage', json=data).get_json()
+        self.assertFalse(any('opening' in tip['text'] for tip in result['ai_care']['care_tips']))
+        # A pending finding counts again only when its detector score passes the damage threshold.
+        data['findings'] = [{'type': 'hole', 'area_ratio': .02, 'confirmed': None, 'confidence': 95},
+                            {'type': 'stain', 'area_ratio': .01, 'confirmed': False}]
+        result = self.client.post('/review-damage', json=data).get_json()
+        self.assertTrue(result['ai_care']['care_tips'][0]['text'].startswith('Mend the opening'))
+        for bad in ({'care_features': {'luminance_mean': 'dark'}}, {'fabric_review_threshold': 140},
+                    {'fabric_model': 'x' * 90}):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.client.post('/review-damage', json={**data, **bad}).status_code, 400)
+        without = {key: value for key, value in data.items() if key != 'care_features'}
+        self.assertNotIn('ai_care', self.client.post('/review-damage', json=without).get_json())
 
     def test_partial_review_keeps_candidates_and_replaces_care(self):
         data = {"fabric_type": "cotton", "fabric_confidence": 62.5, "findings": [

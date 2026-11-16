@@ -20,6 +20,17 @@ class ApiConfig {
   static const productionBaseUrl =
       'https://fabricare1-markkennethkenets-projects.vercel.app/api';
 
+  /// Google OAuth "Web application" client ID. It is public, not a secret.
+  /// The web app signs in with it; Android and iOS pass it as the server
+  /// client ID so Google issues ID tokens the API accepts (GOOGLE_CLIENT_IDS).
+  /// GOOGLE_WEB_CLIENT_ID overrides it; an empty define keeps the default.
+  static const googleWebClientId =
+      _googleClientIdOverride != '' ? _googleClientIdOverride : _googleClientId;
+  static const _googleClientIdOverride =
+      String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+  static const _googleClientId =
+      '1086302215166-3eoejdqn579frtqsukqtgndm9dbafl5l.apps.googleusercontent.com';
+
   static String get baseUrl {
     if (_hostedBaseUrl.isNotEmpty) {
       return _hostedBaseUrl.replaceFirst(RegExp(r'/+$'), '');

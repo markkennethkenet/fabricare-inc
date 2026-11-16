@@ -45,7 +45,17 @@ class ScanResult {
   String get imageAssetFallback => fabricType;
   String get fabricType => analysis['fabric_type'] as String? ?? 'Unknown';
   bool get fabricUncertain => fabricType == 'uncertain';
-  String get fabricLabel => fabricUncertain ? 'Fabric uncertain' : fabricType;
+  String get fabricLabel => fabricUncertain || fabricType.isEmpty
+      ? 'Fabric uncertain'
+      : fabricType[0].toUpperCase() + fabricType.substring(1);
+  int? get healthScore => (analysis['health_score'] as num?)?.round();
+  String? get healthGrade => analysis['health_grade'] as String?;
+
+  /// The laundry mode shown on the result screen.
+  String get laundryHeadline =>
+      section('ai_care')['headline'] as String? ??
+      section('ai_care')['label'] as String? ??
+      laundryMode;
   int get confidencePercent =>
       (analysis['fabric_confidence'] as num? ?? 0).round();
   bool get hasFabricScore => analysis['fabric_confidence'] is num;
@@ -66,8 +76,13 @@ class ScanResult {
   String get healthStatusNote =>
       section('condition_assessment')['explanation'] as String? ??
       'Rescan the garment to get an assessment using the current method.';
-  String get lifespanRange =>
-      'Insufficient evidence for a reliable remaining lifespan estimate.';
+  String get lifespanRange {
+    final lifespan = section('lifespan');
+    final low = lifespan['remaining_months_low'], high = lifespan['remaining_months_high'];
+    return low is num && high is num
+        ? 'About ${low.round()}–${high.round()} months'
+        : 'Insufficient evidence for a reliable remaining lifespan estimate.';
+  }
   String get usageStatus => hasScientificAssessment
       ? analysis['usage_status'] as String? ?? 'Usage history not supplied.'
       : 'Usage history has no validated lifespan model.';

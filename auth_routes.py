@@ -1,3 +1,5 @@
+import logging
+import os
 import secrets
 import time
 
@@ -8,6 +10,7 @@ from mysql.connector import Error as MySqlError
 from database import PostgresUnavailable, get_connection, insert_user
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+log = logging.getLogger(__name__)
 
 
 @auth_bp.errorhandler(MySqlError)
@@ -180,6 +183,73 @@ def login():
     user = _user_row_to_dict(row[:6])
     token = _create_token(user["id"])
     return jsonify({"token": token, "user": user})
+
+
+# FabriCare's public OAuth client IDs (web, Android). Phones send ID tokens issued to the web client.
+DEFAULT_GOOGLE_CLIENT_IDS = (
+    "1086302215166-3eoejdqn579frtqsukqtgndm9dbafl5l.apps.googleusercontent.com",
+    "1086302215166-c74ai1kdmht8ma1m173933hun6q76p34.apps.googleusercontent.com",
+)
+
+
+def google_client_ids():
+    """OAuth client IDs whose Google ID tokens this API accepts.
+
+    GOOGLE_CLIENT_IDS (comma-separated) replaces the defaults; set it empty to turn Google sign-in off.
+    """
+    configured = os.environ.get("GOOGLE_CLIENT_IDS")
+    if configured is None:
+        return list(DEFAULT_GOOGLE_CLIENT_IDS)
+    return [value.strip() for value in configured.split(",") if value.strip()]
+
+
+def verify_google_token(token, audiences):
+    """Check the ID token's signature, expiry, issuer and audience with Google's public keys."""
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token
+
+    return id_token.verify_oauth2_token(token, google_requests.Request(), audience=audiences,
+                                        clock_skew_in_seconds=10)
+
+
+@auth_bp.route("/google", methods=["POST"])
+def google_sign_in():
+    """Sign in with a Google ID token. A new email creates an account named after the Google profile;
+    an existing email signs in to that account, so earlier scans stay with it."""
+    data = request.get_json(silent=True) or {}
+    token = data.get("id_token")
+    if not isinstance(token, str) or not token.strip() or len(token) > 8192:
+        return jsonify({"error": "Google did not return a sign-in token. Try again."}), 400
+    audiences = google_client_ids()
+    if not audiences:
+        return jsonify({"error": "Google sign-in is not set up on the server yet."}), 503
+    try:
+        from google.auth.exceptions import GoogleAuthError, TransportError
+
+        claims = verify_google_token(token.strip(), audiences)
+    except TransportError:
+        log.warning("Google sign-in keys could not be fetched")
+        return jsonify({"error": "Could not reach Google to verify the sign-in. Try again."}), 503
+    except (ValueError, GoogleAuthError):
+        return jsonify({"error": "Google sign-in could not be verified. Try again."}), 401
+    email = str(claims.get("email") or "").lower().strip()
+    if not email or claims.get("email_verified") is not True:
+        return jsonify({"error": "Use a Google account with a verified email address."}), 401
+    name = (str(claims.get("name") or "").strip() or email.split("@")[0])[:255]
+
+    user = _fetch_user_by_email(email)
+    created = user is None
+    if created:
+        # Google accounts have no FabriCare password; store an unusable random hash.
+        with get_connection() as conn:
+            user_id = insert_user(conn, name, email, generate_password_hash(secrets.token_urlsafe(32)),
+                                  int(time.time() * 1000))
+        user = _fetch_user_by_id(user_id)
+    picture = claims.get("picture")
+    return jsonify({
+        "token": _create_token(user["id"]), "user": user, "created": created,
+        "picture": picture if isinstance(picture, str) and picture.startswith("https://") else None,
+    }), 201 if created else 200
 
 
 @auth_bp.route("/logout", methods=["POST"])

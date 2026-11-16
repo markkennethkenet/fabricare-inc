@@ -253,6 +253,10 @@ class FabricCNN(FabricMobileNetV2):
     filename = "fabric_cnn.keras"
     architecture = "fabric_cnn_architecture.json"
     half_weights = "fabric_cnn_weights_fp16.npz"
+    # The V4 notebook trains with label smoothing 0.1, which caps the top score of a six-class
+    # prediction near 92% (0.9 + 0.1 / 6). The API's general 85% review threshold would flag
+    # almost every confident scan, so V4 exports use their own threshold (model_info.json).
+    default_review_threshold = 60.0
 
     def __init__(self, directory):
         info = read_model_info(directory)
@@ -260,6 +264,10 @@ class FabricCNN(FabricMobileNetV2):
         self.validation_accuracy = info.get("validation_accuracy")
         self.test_accuracy = info.get("test_accuracy")
         self.test_macro_f1 = info.get("test_macro_f1")
+        threshold = info.get("review_threshold_percent", self.default_review_threshold)
+        if not isinstance(threshold, (int, float)) or not 0 <= threshold <= 100:
+            raise RuntimeError("model_info.json review_threshold_percent must be between 0 and 100.")
+        self.review_threshold = float(threshold)
         super().__init__(directory)
 
     def model_files(self, directory):

@@ -330,6 +330,10 @@ class _ScanScreenState extends State<ScanScreen> {
           images.length == _requestedViews &&
           _requestedViews < 3) {
         final nextView = _views[_requestedViews];
+        final guess = response.fabricType == 'uncertain'
+            ? null
+            : '${response.fabricType[0].toUpperCase()}${response.fabricType.substring(1)}'
+                '${response.fabricConfidence == null ? '' : ' · ${response.fabricConfidence!.round()}%'}';
         setState(() => _stage = null);
         final addPhoto = await showDialog<bool>(
           context: context,
@@ -337,14 +341,17 @@ class _ScanScreenState extends State<ScanScreen> {
             icon: Icon(nextView == 'back'
                 ? Icons.flip_camera_android_outlined
                 : Icons.zoom_in_rounded),
-            title: const Text('Fabric needs another look'),
-            content: Text(nextView == 'back'
-                ? 'The front photo did not give a confident identification. Add the back of the same garment in even light.'
-                : 'The fabric is still uncertain. Take a sharp close-up of its main material, away from labels and trim.'),
+            title: const Text('One more photo?'),
+            content: Text([
+              if (guess != null) 'Best guess: $guess.',
+              nextView == 'back'
+                  ? 'Add the back of the same garment in even light to confirm.'
+                  : 'Add a sharp close-up of the main fabric, away from labels.',
+            ].join('\n\n')),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('View provisional result')),
+                  child: const Text('See result')),
               FilledButton(
                   onPressed: () => Navigator.pop(ctx, true),
                   child: const Text('Add next photo')),

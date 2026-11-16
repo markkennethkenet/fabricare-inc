@@ -94,6 +94,70 @@ class ReferenceRuleTests(unittest.TestCase):
         self.assertEqual(care_alerts(row("cotton")), [])
 
 
+class CareAdviceTests(unittest.TestCase):
+    def label(self, **care_label):
+        return {"care_label": {"wash": "unknown", "dry": "unknown", "iron": "unknown", "bleach": "unknown",
+                               "professional": "unknown", "max_temperature_c": None, **care_label}}
+
+    def test_never_more_than_three_sentences(self):
+        busy = row("denim", [finding("hole"), finding("stain", 80), finding("pilling", 80), finding("needlemark", 70)],
+                   color=(20, 25, 60))
+        inputs = {"use_frequency": "daily", "washing_frequency": "multiple_per_week",
+                  "laundering_practice": "rubbing or wringing", **self.label()}
+        tips = care_model.care_tips(busy, inputs)
+        _, laundry = care_model.laundry_tips(busy, "repair_first", inputs)
+        self.assertEqual(len(tips), 3)
+        self.assertLessEqual(len(laundry), 3)
+        for tip in tips + laundry:
+            self.assertEqual(tip["text"].count(". "), 0, tip["text"])  # one sentence each
+            self.assertTrue(tip["reference_ids"])
+
+    def test_damage_comes_before_fabric_advice(self):
+        tips = care_model.care_tips(row("wool", [finding("hole")]))
+        self.assertIn("Mend the opening", tips[0]["text"])
+        self.assertTrue(any("wool" in tip["text"] for tip in tips))
+
+    def test_advice_follows_fabric_and_colour(self):
+        denim = care_model.care_tips(row("denim", color=(20, 25, 60)))
+        self.assertTrue(any("transfer dye" in tip["text"] for tip in denim))
+        self.assertFalse(any("dark colours" in tip["text"] for tip in denim))  # no repeated dye advice
+        dark_cotton = care_model.care_tips(row("cotton", color=(20, 25, 30)))
+        self.assertTrue(any("dark colours" in tip["text"] for tip in dark_cotton))
+        silk = care_model.care_tips(row("silk", [finding("stain", 80)]))
+        self.assertIn("professional cleaner", silk[0]["text"])
+        headline, laundry = care_model.laundry_tips(row("wool"), "hand_wash_cold")
+        self.assertEqual(headline, care_model.LAUNDRY_MODES["hand_wash_cold"])
+        self.assertIn("wool-safe detergent", laundry[1]["text"])
+        self.assertIn("flat", laundry[2]["text"])
+
+    def test_dark_garments_are_washed_inside_out(self):
+        _, laundry = care_model.laundry_tips(row("cotton", color=(25, 25, 30)), "machine_gentle_cold")
+        self.assertTrue(laundry[0]["text"].startswith("Turn it inside out, then machine wash"))
+
+    def test_entered_care_label_sets_the_limits(self):
+        inputs = self.label(wash="machine_mild", max_temperature_c=40, dry="do_not_tumble", iron="low")
+        headline, laundry = care_model.laundry_tips(row("cotton"), "machine_gentle_cold", inputs)
+        self.assertEqual(headline, "Machine wash · gentle cycle · per your care label")
+        self.assertIn("at up to 30 °C", laundry[0]["text"])  # a cold suggestion stays below the label limit
+        self.assertIn("not in a tumble dryer", laundry[2]["text"])
+        self.assertIn("iron on low heat", laundry[2]["text"])
+        warm = care_model.laundry_tips(row("cotton"), "machine_normal_warm",
+                                       self.label(wash="machine_normal", max_temperature_c=60))[1]
+        self.assertIn("at up to 60 °C", warm[0]["text"])
+        dry_clean = care_model.laundry_tips(row("cotton"), "machine_normal_warm", self.label(wash="dry_clean_only"))
+        self.assertEqual(dry_clean[0], "Dry clean · per your care label")
+        self.assertEqual(len(dry_clean[1]), 2)
+        self.assertIn("professionally cleaned", dry_clean[1][0]["text"])
+
+    def test_unconfirmed_fabric_gets_gentle_advice(self):
+        tips = care_model.care_tips(row("polyester"), fabric_confirmed=False)
+        self.assertIn("fibre label", tips[0]["text"])
+        self.assertFalse(any("polyester" in tip["text"] for tip in tips))
+        headline, laundry = care_model.laundry_tips(row("polyester"), "machine_normal_warm", fabric_confirmed=False)
+        self.assertEqual(headline, care_model.LAUNDRY_MODES["hand_wash_cold"])
+        self.assertTrue(laundry[0]["text"].startswith("Until the fabric is confirmed, hand wash"))
+
+
 class CareRecommenderTests(unittest.TestCase):
     def bundle(self, **changes):
         rows = [row(f) for f in ("cotton", "wool", "denim")] + [row("cotton", [finding("hole")])]

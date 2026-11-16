@@ -4,7 +4,7 @@ import '../../data/mock_data.dart';
 import '../../models/scan_result.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/fabric_thumb.dart';
-import '../../widgets/section_card.dart';
+import '../../widgets/care_insights.dart';
 import '../scan/scan_screen.dart';
 import 'garment_profile_screen.dart';
 
@@ -388,8 +388,23 @@ class _ScanCard extends StatelessWidget {
                       runSpacing: 5,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        if (scan.hasHealthAssessment)
-                          SeverityBadge(label: scan.healthRating),
+                        if (scan.healthScore case final int score)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: HealthScoreBadge.colorFor(score)
+                                  .withValues(alpha: 0.13),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'Health $score${scan.healthGrade == null ? '' : ' · ${scan.healthGrade}'}',
+                              style: TextStyle(
+                                  color: HealthScoreBadge.colorFor(score),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12),
+                            ),
+                          ),
                         if (status != null)
                           Text(status!.label,
                               style: styles.labelMedium

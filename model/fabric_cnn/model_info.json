@@ -6,5 +6,6 @@
   "test_macro_f1": 0.8629,
   "inference": "mirror_average",
   "input": "224x224 RGB, 0-255, gray (127) padding",
-  "weights": "float16"
+  "weights": "float16",
+  "review_threshold_percent": 60
 }

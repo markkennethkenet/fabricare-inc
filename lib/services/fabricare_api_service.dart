@@ -95,7 +95,6 @@ class FabricCareApiService {
       Map<String, dynamic> userInputs = const {}}) async {
     final body = await _upload('/predict/hybrid', images, fields: {
       'allow_low_quality': allowLowQuality.toString(),
-      'ai_assist': 'true',
       if (modelType != null) 'model_type': modelType,
       'user_inputs': jsonEncode(userInputs)
     });
@@ -116,6 +115,7 @@ class FabricCareApiService {
   Future<Map<String, dynamic>> reviewDamage(
       ScanResult scan, Map<String, bool> decisions) async {
     final secondStatus = scan.section('fabric_second_opinion')['status'];
+    final careFeatures = scan.section('ai_care')['features'];
     final response = await http
         .post(
           Uri.parse('${ApiConfig.baseUrl}/review-damage'),
@@ -136,6 +136,11 @@ class FabricCareApiService {
                 scan.section('condition_assessment')['quality_limited'] ??
                     scan.analysis['quality_override'] == true,
             'user_inputs': scan.userInputs,
+            if (scan.section('fabric')['threshold_percent'] case final num threshold)
+              'fabric_review_threshold': threshold,
+            if (scan.fabricModelName case final String model) 'fabric_model': model,
+            // Lets the server refresh the care advice for the reviewed findings.
+            if (careFeatures is Map) 'care_features': careFeatures,
             'findings': [
               for (final finding in scan.damageDetection.allItems)
                 {
@@ -143,6 +148,7 @@ class FabricCareApiService {
                   'view': finding.view,
                   'type': finding.label,
                   'area_ratio': finding.areaRatio,
+                  'confidence': finding.confidencePercent,
                   if (finding.bbox.length == 4) 'bbox': finding.bbox,
                   'confirmed': decisions[finding.id],
                 }
@@ -163,9 +169,6 @@ class FabricCareApiService {
     }
     return result;
   }
-
-  Future<Map<String, dynamic>> askLocalVision(ScanImage front) =>
-      _upload('/vision-opinion', [front]);
 
   Future<Map<String, dynamic>> _upload(String endpoint, List<ScanImage> images,
       {bool legacy = false, Map<String, String> fields = const {}}) async {
@@ -190,11 +193,7 @@ class FabricCareApiService {
     }
     final client = http.Client();
     final timer = Stopwatch()..start();
-    final step = switch (endpoint) {
-      '/quality' => 'Photo quality check',
-      '/vision-opinion' => 'Qwen review',
-      _ => 'Scan analysis',
-    };
+    final step = endpoint == '/quality' ? 'Photo quality check' : 'Scan analysis';
     debugPrint(
         'FabriCare POST ${request.url} photos=${images.length} bytes=${request.contentLength}');
     try {

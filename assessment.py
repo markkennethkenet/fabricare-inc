@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
 from care_model import finding_counts
-from model_analysis import confidence_threshold
+from model_analysis import review_threshold
 
 CONFIG = json.loads((Path(__file__).parent / "assessment_config.json").read_text(encoding="utf-8"))
 METHOD_VERSION = "visible-condition-and-label-care/2.0"
@@ -219,7 +219,7 @@ def guidance(action, reason, selected_because, refs, restriction=""):
             "reference_ids": refs, "status": GUIDANCE, "provenance": "rule_derived"}
 
 
-def care_for(fabric_type, fabric_confidence, inputs, condition):
+def care_for(fabric_type, fabric_confidence, inputs, condition, fabric_threshold=None):
     label = inputs["care_label"]
     wash = label["wash"]
     temperature = label["max_temperature_c"]
@@ -231,7 +231,7 @@ def care_for(fabric_type, fabric_confidence, inputs, condition):
     verified_wool = composition in {"100% wool", "100% merino wool"}
     predicted = fabric_type.casefold()
     material = fiber or predicted
-    needs_confirmation = (fabric_confidence is None or fabric_confidence < confidence_threshold()
+    needs_confirmation = (fabric_confidence is None or fabric_confidence < review_threshold(fabric_threshold)
                           or condition["quality_limited"] or predicted not in FABRIC_CONTEXT)
     conflicts = wash == "conflicting" or (wash == "dry_clean_only" and label["professional"] == "do_not_dry_clean")
     domestic = wash in WASHABLE and not conflicts
@@ -529,11 +529,12 @@ def durability_and_outlook(condition, inputs, fabric_type="uncertain", today=Non
     return lifespan, outlook
 
 
-def assess(fabric_type, detections, user_inputs=None, today=None, *, fabric_confidence=None,
+def assess(fabric_type, detections, user_inputs=None, today=None, *, fabric_confidence=None, fabric_threshold=None,
            detector_available=True, reviewed=False, quality_limited=False, coverage_limited=False):
     inputs = normalize_user_inputs(user_inputs, today=today)
     condition = condition_for(detections, detector_available, reviewed, quality_limited, coverage_limited)
-    advice, laundry, risks, needs_confirmation = care_for(fabric_type, fabric_confidence, inputs, condition)
+    advice, laundry, risks, needs_confirmation = care_for(fabric_type, fabric_confidence, inputs, condition,
+                                                          fabric_threshold)
     lifespan, outlook = durability_and_outlook(condition, inputs, fabric_type, today)
     health = health_assessment(condition)
     usage = [f"{name}: {inputs[field].replace('_', ' ')}"

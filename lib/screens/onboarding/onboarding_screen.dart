@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../auth/login_screen.dart';
-import '../auth/signup_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -18,17 +17,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _SlideData(
       icon: Icons.checkroom_rounded,
       title: 'Smart Fabric Care\nStarts Here',
-      body: 'Scan fabrics, identify materials, and receive smart care recommendations to protect your clothes.',
+      body: 'Identify the fabric and get care advice that protects your clothes.',
     ),
     _SlideData(
       icon: Icons.camera_alt_rounded,
       title: 'Scan. Identify.\nUnderstand.',
-      body: 'Point your camera at any garment to detect fabric type and current condition in seconds.',
+      body: 'Point your camera at a garment to see its fabric and condition.',
     ),
     _SlideData(
       icon: Icons.eco_rounded,
       title: 'Care Smarter.\nMake It Last.',
-      body: 'Get washing, drying, and storage guidance tailored to every garment you own.',
+      body: 'Washing and drying advice made for each garment you scan.',
     ),
   ];
 
@@ -96,18 +95,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         );
                       } else {
                         Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(builder: (_) => const SignupScreen()),
+                          MaterialPageRoute(builder: (_) => const LoginScreen()),
                         );
                       }
                     },
-                    child: Text(_page < _slides.length - 1 ? 'Get Started' : 'Create Account'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    ),
-                    child: const Text('Already have an account? Log In'),
+                    child: Text(_page < _slides.length - 1 ? 'Next' : 'Get started'),
                   ),
                 ],
               ),

@@ -1,8 +1,6 @@
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from pathlib import Path
-import base64
-import io
 import tempfile
 import json
 import os
@@ -10,12 +8,9 @@ import platform
 from threading import Lock
 from time import monotonic
 from types import SimpleNamespace
-from urllib.error import URLError
-from urllib.request import Request, urlopen
 import sklearn
 import cv2
 import numpy as np
-from PIL import Image, ImageOps, UnidentifiedImageError
 from skimage.feature import graycomatrix, graycoprops
 from ultralytics import YOLO
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -191,8 +186,12 @@ def load_care_recommender():
         return care_model_cache["model"]
 
 
-def ai_care_for(records, fabric_type, detections, user_inputs):
-    """Laundry-mode suggestion and automated care alerts from the fabric, condition and image features."""
+IMAGE_CARE_FEATURES = tuple(name for name in care_model.FEATURE_NAMES
+                            if not name.startswith("fabric_") and not name.endswith(("_count", "_max_area")))
+
+
+def ai_care_for(records, fabric_type, detections, user_inputs, *, fabric_confirmed=True, fabric_model=None):
+    """Laundry-mode suggestion, care advice and automated care alerts from the fabric, condition and image."""
     front = next((record for record in records if record["view"] == "front"), records[0])
     try:
         row = care_model.feature_row(
@@ -201,6 +200,11 @@ def ai_care_for(records, fabric_type, detections, user_inputs):
     except Exception:
         app.logger.exception("Care features could not be extracted")
         return {"status": "unavailable"}
+    return ai_care_from_row(row, fabric_type, user_inputs, fabric_confirmed=fabric_confirmed,
+                            fabric_model=fabric_model)
+
+
+def ai_care_from_row(row, fabric_type, user_inputs, *, fabric_confirmed=True, fabric_model=None):
     reference_mode, reasons = care_model.reference_laundry_mode(row)
     recommender = load_care_recommender() if fabric_type in care_model.FABRICS else None
     if recommender is not None:
@@ -211,9 +215,16 @@ def ai_care_for(records, fabric_type, detections, user_inputs):
         status, model_name = "rule_based_guidance", "Reference care rules"
     mode = prediction["laundry_mode"]
     label_entered = user_inputs["care_label"]["wash"] != "unknown"
+    headline, laundry = care_model.laundry_tips(row, mode, user_inputs, fabric_confirmed)
+    provided_by = (f"{model_name} care model" if status == "model_suggestion" else "FabriCare care rules")
+    if isinstance(fabric_model, str) and fabric_model:
+        provided_by += f" · {fabric_model} fabric result"
     return {
         "status": status, "model": model_name, "laundry_mode": mode,
         "label": care_model.LAUNDRY_MODES[mode], "detail": care_model.MODE_DETAILS[mode],
+        "headline": headline, "provided_by": provided_by,
+        "care_tips": care_model.care_tips(row, user_inputs, fabric_confirmed),
+        "laundry_tips": laundry,
         "confidence": prediction["confidence"], "probabilities": prediction["probabilities"],
         "reference_mode": reference_mode, "agrees_with_reference": mode == reference_mode,
         "reasons": [{"text": text, "reference_ids": refs} for text, refs in reasons],
@@ -227,8 +238,8 @@ def ai_care_for(records, fabric_type, detections, user_inputs):
 
 def with_care_references(references, ai_care):
     """Add the sources cited by the care suggestion and alerts to the response references."""
-    cited = {ref for entry in [*ai_care.get("reasons", []), *ai_care.get("alerts", [])]
-             for ref in entry["reference_ids"]}
+    cited = {ref for key in ("reasons", "alerts", "care_tips", "laundry_tips")
+             for entry in ai_care.get(key, []) for ref in entry["reference_ids"]}
     known = {entry["id"] for entry in references}
     extra = [{"id": ref, "title": REFERENCES[ref][0], "url": REFERENCES[ref][1]}
              for ref in sorted(cited - known) if ref in REFERENCES]
@@ -505,17 +516,22 @@ def analyze_upload(*, hybrid):
             needs_model_review = opinion and opinion["status"] in {"disagrees", "inconclusive"}
             merged = merge_detections(detections)
             detector_available = any(record["damage_available"] for record in records)
+            threshold = getattr(model, "review_threshold", None)
             assessment = assess(
                 fabric["fabric_type"], merged, user_inputs,
                 fabric_confidence=None if needs_model_review else fabric["fabric_confidence"],
+                fabric_threshold=threshold,
                 detector_available=detector_available, quality_limited=failed_quality,
                 coverage_limited=not all(record["damage_available"] for record in records),
             )
-            ai_care = ai_care_for(records, fabric["fabric_type"], merged, user_inputs)
-            assessment["references"] = with_care_references(assessment["references"], ai_care)
             metadata = scan_model_metadata(model_type, model)
+            ai_care = ai_care_for(records, fabric["fabric_type"], merged, assessment["user_inputs"],
+                                  fabric_confirmed=not assessment["fabric_needs_confirmation"],
+                                  fabric_model=metadata["fabric_model"])
+            assessment["references"] = with_care_references(assessment["references"], ai_care)
             analysis = model_result(
                 {"fabric_type": fabric["fabric_type"], "confidence": fabric["fabric_confidence"],
+                 "review_threshold": threshold,
                  "score_kind": records[0].get("score_kind", "model_score")},
                 merged, model.labels if model is not None else fabric_labels,
                 detector_available, damage_labels(),
@@ -547,62 +563,6 @@ def analyze():
 @app.post("/predict/hybrid")
 def predict_hybrid():
     return analyze_upload(hybrid=True)
-
-
-@app.post("/vision-opinion")
-def vision_opinion():
-    try:
-        uploads, _ = uploaded_views()
-    except ValueError as error:
-        return jsonify({"error": str(error)}), 400
-    if len(uploads) != 1 or uploads[0][0] != "front":
-        return jsonify({"error": "Provide one front photo for Qwen."}), 400
-    try:
-        with Image.open(uploads[0][1].stream) as source:
-            if source.format not in {"JPEG", "PNG"} or source.width * source.height > 24_000_000:
-                raise ValueError("Unsupported photo.")
-            photo = ImageOps.exif_transpose(source).convert("RGB")
-        photo.thumbnail((960, 960), Image.Resampling.LANCZOS)
-        with io.BytesIO() as encoded:
-            photo.save(encoded, format="JPEG", quality=92)
-            image = base64.b64encode(encoded.getvalue()).decode("ascii")
-    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError):
-        return jsonify({"error": "Use a readable JPG or PNG front photo."}), 400
-    labels = [*SIX_FABRIC_LABELS, "uncertain"]
-    payload = {
-        "model": "qwen3-vl:2b", "stream": False,
-        "messages": [{
-            "role": "user", "images": [image],
-            "content": (
-                "Identify the fabric of the main garment. Choose cotton, denim, linen, polyester, "
-                "silk, wool, or uncertain. Choose uncertain when visual clues are insufficient. "
-                'Keep reasoning brief and return a JSON object such as {"fabric":"uncertain"}.'
-            ),
-        }],
-        "format": {
-            "type": "object",
-            "properties": {"fabric": {"type": "string", "enum": labels}},
-            "required": ["fabric"],
-        },
-        "options": {"temperature": 0, "num_ctx": 4096, "num_predict": 1536},
-    }
-    query = Request("http://127.0.0.1:11434/api/chat",
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"})
-    try:
-        with urlopen(query, timeout=90) as response:
-            answer = json.load(response)
-    except (OSError, URLError, ValueError):
-        return jsonify({"error": "Qwen is unavailable. Check that Ollama is running on the PC."}), 503
-    try:
-        content = answer["message"]["content"]
-        label = json.loads(content)["fabric"] if content.strip() else None
-    except (KeyError, ValueError, AttributeError, TypeError):
-        label = None
-    return jsonify({
-        "model": "Qwen3-VL 2B",
-        "fabric_type": label if label in labels else None,
-    })
 
 
 @app.post("/review-damage")
@@ -637,7 +597,10 @@ def review_damage():
         if box is not None and (not isinstance(box, list) or len(box) != 4
                                 or any(type(v) not in (int, float) or not 0 <= v <= 1 for v in box)):
             return jsonify({"error": "Invalid finding location."}), 400
-        observations.append({"type": kind, "area_ratio": area, "id": finding_id,
+        score = finding.get("confidence")
+        if score is not None and (type(score) not in (int, float) or not 0 <= score <= 100):
+            return jsonify({"error": "Invalid detector score."}), 400
+        observations.append({"type": kind, "area_ratio": area, "id": finding_id, "confidence": score,
                              "view": view, "bbox": box, "confirmed": decision is True})
     if not reviewed:
         return jsonify({"error": "Confirm or dismiss at least one finding."}), 400
@@ -650,9 +613,29 @@ def review_damage():
         detector_available = data.get("detector_available", True)
         if any(type(flag) is not bool for flag in (quality_limited, coverage_limited, detector_available)):
             raise ValueError("Invalid image quality flag.")
-        return jsonify(assess(fabric_type, observations, data.get("user_inputs"), reviewed=True,
-                              fabric_confidence=confidence, quality_limited=quality_limited,
-                              detector_available=detector_available, coverage_limited=coverage_limited))
+        threshold = data.get("fabric_review_threshold")
+        if threshold is not None and (type(threshold) not in (int, float) or not 0 <= threshold <= 100):
+            raise ValueError("Invalid fabric review threshold.")
+        result = assess(fabric_type, observations, data.get("user_inputs"), reviewed=True,
+                        fabric_confidence=confidence, fabric_threshold=threshold, quality_limited=quality_limited,
+                        detector_available=detector_available, coverage_limited=coverage_limited)
+        image_features = data.get("care_features")
+        if image_features is not None:
+            # Refresh the care advice for the reviewed findings with the scan's saved photo features.
+            if (not isinstance(image_features, dict)
+                    or any(type(image_features.get(name)) not in (int, float) for name in IMAGE_CARE_FEATURES)):
+                raise ValueError("Invalid care features.")
+            fabric_model = data.get("fabric_model")
+            if fabric_model is not None and (not isinstance(fabric_model, str) or len(fabric_model) > 80):
+                raise ValueError("Invalid fabric model name.")
+            row = care_model.feature_row(
+                fabric_type, care_model.damage_features(observations),
+                {name: float(image_features[name]) for name in IMAGE_CARE_FEATURES}, {})
+            result["ai_care"] = ai_care_from_row(
+                row, fabric_type, result["user_inputs"], fabric_confirmed=not result["fabric_needs_confirmation"],
+                fabric_model=fabric_model)
+            result["references"] = with_care_references(result["references"], result["ai_care"])
+        return jsonify(result)
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
 

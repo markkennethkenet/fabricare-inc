@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user.dart';
 import 'auth_api_service.dart';
+import 'google_auth.dart';
 
 class AuthException implements Exception {
   final String message;
@@ -15,17 +18,23 @@ class AuthService extends ChangeNotifier {
   AuthService._();
   static final AuthService instance = AuthService._();
 
+  static const _photoKey = 'fabricare_google_photo';
+
   User? _currentUser;
   User? get currentUser => _currentUser;
   bool get isLoggedIn => _currentUser != null;
+
+  /// The Google profile photo of the signed-in account, when it has one.
+  String? _photoUrl;
+  String? get photoUrl => _photoUrl;
 
   Future<void> init() async {
     await AuthApiService.instance.loadStoredToken();
     try {
       _currentUser = await AuthApiService.instance.fetchCurrentUser();
-    } on AuthApiException catch (e) {
-      debugPrint('Auth restore failed: $e');
-      _currentUser = null;
+      if (_currentUser != null) {
+        _photoUrl = (await SharedPreferences.getInstance()).getString(_photoKey);
+      }
     } catch (e) {
       debugPrint('Auth restore failed: $e');
       _currentUser = null;
@@ -33,51 +42,42 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<User> register({
-    required String fullName,
-    required String email,
-    required String password,
-  }) async {
-    try {
-      _currentUser = await AuthApiService.instance.register(
-        fullName: fullName,
-        email: email,
-        password: password,
-      );
-      notifyListeners();
-      return _currentUser!;
-    } on AuthApiException catch (e) {
-      throw AuthException(e.message);
-    } catch (e) {
+  /// Signs in to FabriCare with the Google account the user picked.
+  Future<User> signInWithGoogle(GoogleSignInAccount account) async {
+    final idToken = account.authentication.idToken;
+    if (idToken == null || idToken.isEmpty) {
       throw const AuthException(
-        'Could not complete sign up. Please try again.',
-      );
+          'Google did not return a sign-in token. Try again.');
     }
-  }
-
-  Future<User> login({
-    required String email,
-    required String password,
-  }) async {
     try {
-      _currentUser = await AuthApiService.instance.login(
-        email: email,
-        password: password,
-      );
+      final session =
+          await AuthApiService.instance.signInWithGoogle(idToken);
+      _currentUser = session.user;
+      _photoUrl = session.picture ?? account.photoUrl;
+      final prefs = await SharedPreferences.getInstance();
+      if (_photoUrl == null) {
+        await prefs.remove(_photoKey);
+      } else {
+        await prefs.setString(_photoKey, _photoUrl!);
+      }
       notifyListeners();
       return _currentUser!;
     } on AuthApiException catch (e) {
       throw AuthException(e.message);
+    } on AuthException {
+      rethrow;
     } catch (e) {
-      throw const AuthException(
-        'Could not complete login. Please try again.',
-      );
+      throw const AuthException('Could not finish signing in. Try again.');
     }
   }
 
   Future<void> logout() async {
     await AuthApiService.instance.logout();
+    // Forget the Google choice so the next sign-in can pick another account.
+    await GoogleAuth.instance.signOut();
     _currentUser = null;
+    _photoUrl = null;
+    await (await SharedPreferences.getInstance()).remove(_photoKey);
     notifyListeners();
   }
 
@@ -97,22 +97,6 @@ class AuthService extends ChangeNotifier {
         location: location,
       );
       notifyListeners();
-    } on AuthApiException catch (e) {
-      throw AuthException(e.message);
-    }
-  }
-
-  Future<void> changePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    if (_currentUser == null) throw const AuthException('Not logged in.');
-
-    try {
-      await AuthApiService.instance.changePassword(
-        currentPassword: currentPassword,
-        newPassword: newPassword,
-      );
     } on AuthApiException catch (e) {
       throw AuthException(e.message);
     }

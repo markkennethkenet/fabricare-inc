@@ -600,7 +600,9 @@ print("16-bit CNN test accuracy:", f"{best_test['accuracy']:.2%}", "| 32-bit:",
     "name": f"{BACKBONES[best_cnn][0]} (V4)", "backbone": best_cnn,
     "validation_accuracy": round(cnn_results[best_cnn]["valid"]["accuracy"] * 100, 2),
     "test_accuracy": round(best_test["accuracy"] * 100, 2), "test_macro_f1": round(best_test["macro_f1"], 4),
-    "weights": "float16", "inference": "mirror_average", "input": "224x224 RGB, 0-255, gray (127) padding"},
+    "weights": "float16", "inference": "mirror_average", "input": "224x224 RGB, 0-255, gray (127) padding",
+    # Label smoothing 0.1 caps six-class scores near 92%, so the API's 85% default is too strict.
+    "review_threshold_percent": 60},
     indent=2))
 shutil.copy2(RUN / "glcm" / "glcm_decision_tree.joblib", export / "glcm_models" / "glcm_decision_tree.joblib")
 shutil.copy2(RUN / "glcm" / "glcm_svm.joblib", export / "glcm_models" / "glcm_svm.joblib")

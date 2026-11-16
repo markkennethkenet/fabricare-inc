@@ -32,6 +32,15 @@ class _HomeScreenState extends State<HomeScreen> {
       .toList(growable: false);
   int _tipIndex = 0;
 
+  static String _greeting() {
+    final hour = DateTime.now().hour;
+    return hour < 12
+        ? 'Good morning'
+        : hour < 18
+            ? 'Good afternoon'
+            : 'Good evening';
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = AppData.instance;
@@ -71,7 +80,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          firstName.isEmpty ? 'Welcome' : 'Welcome, $firstName',
+                          firstName.isEmpty
+                              ? _greeting()
+                              : '${_greeting()}, $firstName',
                           style: styles.bodyMedium
                               ?.copyWith(color: AppColors.inkSoft),
                         ),
@@ -85,7 +96,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       backgroundColor: AppColors.surfaceMuted,
                       foregroundColor: AppColors.ink,
                     ),
-                    icon: const Icon(Icons.person_outline_rounded),
+                    icon: AuthService.instance.photoUrl == null
+                        ? const Icon(Icons.person_outline_rounded)
+                        : CircleAvatar(
+                            radius: 14,
+                            backgroundColor: AppColors.surfaceMuted,
+                            foregroundImage:
+                                NetworkImage(AuthService.instance.photoUrl!),
+                            onForegroundImageError: (_, __) {},
+                            child: const Icon(Icons.person_outline_rounded,
+                                size: 18),
+                          ),
                   ),
                 ],
               ),
@@ -191,7 +212,7 @@ class _ScanHero extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Identify the fabric, check for visible damage, and get care advice.',
+              'Fabric, condition and care advice in one photo.',
               style: styles.bodyMedium?.copyWith(
                 color: const Color(0xFFE7EDDC),
                 height: 1.4,
@@ -320,9 +341,11 @@ class _RecentScan extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final styles = Theme.of(context).textTheme;
-    final subtitle = scan.hasHealthAssessment
-        ? '${scan.fabricLabel} · ${scan.healthRating}'
-        : scan.fabricLabel;
+    final subtitle = [
+      scan.fabricLabel,
+      if (scan.healthScore case final int score) 'Health $score',
+      MaterialLocalizations.of(context).formatShortMonthDay(scan.dateScanned),
+    ].join(' · ');
     return _HomeCard(
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(builder: (_) => GarmentProfileScreen(result: scan)),

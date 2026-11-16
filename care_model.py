@@ -197,6 +197,190 @@ def care_alerts(row):
     return alerts
 
 
+MAX_TIPS = 3
+LIGHT_LUMINANCE = 170.0
+PALE_SATURATION = 0.2
+MACHINE_CYCLES = {"machine_normal": "a normal", "machine_mild": "a gentle", "machine_very_mild": "a delicate"}
+LABEL_HEADLINES = {
+    "hand": "Hand wash · per your care label",
+    "machine_normal": "Machine wash · normal cycle · per your care label",
+    "machine_mild": "Machine wash · gentle cycle · per your care label",
+    "machine_very_mild": "Machine wash · delicate cycle · per your care label",
+    "dry_clean_only": "Dry clean · per your care label",
+    "professional_only": "Professional cleaning · per your care label",
+    "do_not_wash": "Do not wash · per your care label",
+}
+
+
+def _fabric_of(row):
+    return next((name for name in FABRICS if row[f"fabric_{name}"] >= 0.5), None)
+
+
+def _pick(candidates, limit=MAX_TIPS):
+    """The highest-priority distinct sentences, each with its reference ids."""
+    chosen = []
+    for _, text, refs in sorted(candidates, key=lambda candidate: -candidate[0]):
+        if all(text != tip["text"] for tip in chosen):
+            chosen.append({"text": text, "reference_ids": refs})
+        if len(chosen) == limit:
+            break
+    return chosen
+
+
+def care_tips(row, inputs=None, fabric_confirmed=True):
+    """Up to three care recommendations chosen for this scan.
+
+    Candidates come from the detected damage, the fabric, the garment's colour and the user's wear and
+    washing habits; the most pressing three are kept. Each sentence cites assessment.REFERENCES ids.
+    """
+    inputs = inputs or {}
+    fabric = _fabric_of(row) if fabric_confirmed else None
+    has = {kind: row[f"{kind}_count"] > 0 for kind in DAMAGE_TYPES}
+    dark = is_dark_or_strong(row)
+    light = not dark and row["luminance_mean"] >= LIGHT_LUMINANCE and row["saturation_mean"] < PALE_SATURATION
+    candidates = []
+
+    def add(priority, text, refs):
+        candidates.append((priority, text, refs))
+
+    if has["hole"]:
+        add(100, "Mend the opening before it is washed or worn again; pulling and agitation make holes bigger.",
+            ["I", "L"])
+    if has["stain"]:
+        if fabric == "silk":
+            add(95, "Have a professional cleaner treat the stain; wet spot cleaning can leave rings on silk.",
+                ["M", "R", "N"])
+        else:
+            add(95, "Treat the stain before washing: blot it, then test a stain remover on a hidden spot first.", ["N"])
+    if not fabric_confirmed:
+        add(90, "Check the fibre label to confirm the fabric before choosing a wash.", ["E", "G"])
+    if has["pilling"]:
+        add(85, "Remove the pills with a fabric shaver once it is dry, and wash it inside out.", ["B", "J"])
+    if has["needlemark"]:
+        add(80, "Check the marked spot for loose threads and secure them before cleaning.", ["A", "L"])
+    if inputs.get("laundering_practice") == "rubbing or wringing":
+        add(78, "Press water out gently instead of wringing; twisting and rubbing strain the fibres.", ["J", "R"])
+    if dark and fabric != "denim":  # the denim tips below already cover dye
+        add(75, "Wash it with similar dark colours in cool water to limit fading and dye transfer.", ["Q", "G"])
+    if fabric == "wool":
+        add(72, "Air it out between wears; wool often needs washing less than other fabrics.", ["H"])
+        add(66, "Keep it away from heat and rubbing, which make wool felt and shrink.", ["H", "J"])
+    elif fabric == "silk":
+        add(72, "Never wring silk; roll it in a towel to press the water out.", ["M", "R"])
+        add(66, "Dry and store it away from direct sun, which fades and weakens silk.", ["M", "R"])
+    elif fabric == "denim":
+        add(72, "Wash denim less often and inside out to keep its colour.", ["K", "P"])
+        if dark:
+            add(64, "Keep it away from pale items for the first few washes; dark denim can transfer dye.", ["P"])
+    elif fabric == "polyester":
+        add(72, "Keep heat low when washing, drying and ironing; polyester softens with heat.", ["M"])
+        add(56, "Treat oily marks quickly; polyester holds on to oil-based stains.", ["M"])
+    elif fabric == "cotton":
+        add(68, "Skip high-heat drying; cotton can shrink with heat.", ["M", "G"])
+    elif fabric == "linen":
+        add(68, "Give linen room in the machine and hang it promptly; it creases easily.", ["M"])
+        add(58, "Iron linen while it is still slightly damp for smoother results.", ["M"])
+    if inputs.get("washing_frequency") == "multiple_per_week":
+        add(62, "Wash it only when it is actually dirty; every wash adds wear.", ["D", "F"])
+    if inputs.get("use_frequency") in {"daily", "several_times_a_week"}:
+        add(57, "You wear it often, so rotate it with similar pieces to spread out the wear.", ["D"])
+    if light:
+        add(50, "Keep it away from dark or new items in the wash so it stays bright.", ["Q"])
+    add(10, "Follow the garment's care label; it sets the limits for its most delicate part.", ["E", "G"])
+    return _pick(candidates)
+
+
+def laundry_tips(row, laundry_mode, inputs=None, fabric_confirmed=True):
+    """Up to three laundry sentences: how to wash, what to use, and how to dry and iron.
+
+    A care label the user entered sets the limits; otherwise the trained model's laundry mode does.
+    Returns (headline, tips).
+    """
+    inputs = inputs or {}
+    label = inputs.get("care_label") or {}
+    wash, temperature = label.get("wash", "unknown"), label.get("max_temperature_c")
+    fabric = _fabric_of(row) if fabric_confirmed else None
+    dark = is_dark_or_strong(row)
+    mode = laundry_mode
+    if not fabric_confirmed and mode not in {"repair_first", "professional_clean"}:
+        mode = "hand_wash_cold"
+    cold = mode in {"machine_gentle_cold", "hand_wash_cold", "repair_first"}
+    inside_out = dark or fabric == "denim" or row["pilling_count"] > 0
+    tips = []
+
+    def add(text, refs):
+        tips.append({"text": text, "reference_ids": refs})
+
+    # 1. How to wash.
+    prefix = "Mend the opening first, then " if mode == "repair_first" else ""
+    if wash in {"dry_clean_only", "professional_only"}:
+        add("Have it professionally cleaned, as the care label says, and point out any marks.", ["E", "G"])
+    elif wash == "do_not_wash":
+        add("Do not wash it; the care label rules out washing, so ask a professional cleaner.", ["E", "G"])
+    elif wash == "conflicting":
+        add("Recheck the care label first; the washing symbols you entered conflict.", ["E", "G"])
+    elif wash == "hand" or wash in MACHINE_CYCLES:
+        # The label's maximum is a limit; a cold-wash suggestion stays at 30 °C or below.
+        limit = min(temperature, 30) if temperature and cold else temperature or (30 if cold else None)
+        water = f" at up to {limit} °C" if limit else ""
+        method = "hand wash it" if wash == "hand" else f"machine wash it on {MACHINE_CYCLES[wash]} cycle"
+        start = prefix or ("Turn it inside out, then " if inside_out else "")
+        text = f"{start}{method}{water}, within your care label's limits."
+        add(text[0].upper() + text[1:], ["E", "G"])
+    else:
+        method = {
+            "machine_normal_warm": "machine wash it on a normal cycle at 40 °C",
+            "machine_gentle_cold": "machine wash it on a gentle cycle in cold water (30 °C or lower)",
+            "hand_wash_cold": "hand wash it in cool water and press the water out gently",
+            "professional_clean": "take it to a professional cleaner and point out the mark",
+            "repair_first": "hand wash it in cool water",
+        }[mode]
+        if not fabric_confirmed:
+            start = "Until the fabric is confirmed, " + prefix.lower()
+        else:
+            start = prefix or ("Turn it inside out, then " if inside_out and mode != "professional_clean" else "")
+        text = start + method + "."
+        add(text[0].upper() + text[1:], {"machine_normal_warm": ["M", "G"], "machine_gentle_cold": ["Q", "G"],
+                                         "hand_wash_cold": ["H", "M"], "professional_clean": ["M", "R"],
+                                         "repair_first": ["I", "L"]}[mode])
+    restricted = wash in {"dry_clean_only", "professional_only", "do_not_wash"} or mode == "professional_clean"
+
+    # 2. What to wash it with.
+    bleach = label.get("bleach", "unknown")
+    if restricted:
+        add("Keep it on a padded hanger or folded away from direct sun until it is cleaned.", ["M", "R"])
+    elif fabric == "wool":
+        add("Use a wool-safe detergent and no bleach.", ["H"])
+    elif fabric == "silk":
+        add("Use a mild detergent made for delicates, and no bleach.", ["M", "R"])
+    elif dark:
+        add("Use a detergent for dark colours and skip bleach.", ["Q", "G"])
+    elif bleach in {"allowed", "oxygen_only"}:
+        add("Use a regular detergent; " + ("an oxygen bleach" if bleach == "oxygen_only" else "bleach")
+            + " is fine for stubborn marks, as your label allows.", ["E", "G"])
+    else:
+        add("Use a regular detergent and avoid chlorine bleach unless the label allows it.", ["E", "G"])
+
+    # 3. How to dry and iron.
+    if not restricted:
+        dry = {"do_not_tumble": "Air dry it, not in a tumble dryer", "line": "Line dry it", "flat": "Dry it flat",
+               "tumble_low": "Tumble dry it on low", "tumble_normal": "Tumble dry it as normal"}.get(label.get("dry"))
+        iron = {"do_not_iron": "do not iron it", "low": "iron on low heat", "medium": "iron on medium heat",
+                "high": "iron on high heat"}.get(label.get("iron"))
+        defaults = {
+            "wool": ("Dry it flat on a towel, away from direct heat", "steam rather than iron it"),
+            "silk": ("Dry it flat or hang it in the shade", "iron on low from the reverse side"),
+            "denim": ("Hang it to dry instead of using the dryer", "iron on medium if needed"),
+            "polyester": ("Line dry it", "iron on low only if needed"),
+            "cotton": ("Line dry it or tumble dry on low", "iron on medium to high while slightly damp"),
+            "linen": ("Hang it to dry", "iron while it is still slightly damp"),
+        }
+        default_dry, default_iron = defaults.get(fabric, ("Air dry it", "use a low iron until you confirm the fabric"))
+        add(f"{dry or default_dry}, and {iron or default_iron}.", ["E", "G"] if dry or iron else ["M"])
+    headline = LABEL_HEADLINES.get(wash) or LAUNDRY_MODES[mode]
+    return headline, tips[:MAX_TIPS]
+
+
 class CareRecommender:
     """A trained Decision Tree, Random Forest or SVM saved by the training notebook."""
 

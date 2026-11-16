@@ -6,9 +6,11 @@ import '../../data/mock_data.dart';
 import '../../models/damage_detection.dart';
 import '../../models/scan_result.dart';
 import '../../services/fabricare_api_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/care_insights.dart';
 import '../../widgets/detection_image.dart';
 import '../../widgets/fabric_result_hero.dart';
+import '../../widgets/scan_compare_sheet.dart';
 import '../../widgets/section_card.dart';
 import 'scan_screen.dart';
 
@@ -25,30 +27,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   late ScanResult result = widget.result;
   late final Map<String, bool> _decisions = result.damageReview;
   bool _saving = false;
-  bool _checkingVision = false;
-  Map<String, dynamic>? _visionOpinion;
-  String? _visionError;
-
-  Future<void> _askVision(ScanImage front) async {
-    setState(() {
-      _checkingVision = true;
-      _visionError = null;
-    });
-    try {
-      final opinion = await FabricCareApiService.instance.askLocalVision(front);
-      if (mounted) setState(() => _visionOpinion = opinion);
-    } catch (error) {
-      if (mounted) setState(() => _visionError = error.toString());
-    } finally {
-      if (mounted) setState(() => _checkingVision = false);
-    }
-  }
 
   void _viewFinding(DamageItem item) {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${item.label} · ${item.view.replaceAll('_', ' ')}'),
+        title: Text('${_display(item.label)} · ${_display(item.view)}'),
         content: SingleChildScrollView(
           child: SizedBox(
             width: double.maxFinite,
@@ -79,12 +63,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
           .saveDamageReview(result, assessment, decisions);
       if (!mounted) return;
       setState(() => result = reviewed);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Damage review saved.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Review saved. Care advice updated.')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save the damage review. $error')));
+          SnackBar(content: Text('Could not save the review. $error')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -93,49 +77,86 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   static List<Map> _entries(Object? values) =>
       values is List ? values.whereType<Map>().toList() : const [];
 
-  static String _display(Object? value) =>
-      value?.toString().replaceAll('_', ' ') ?? 'unavailable';
+  static String _display(Object? value) {
+    final text = value?.toString().replaceAll('_', ' ') ?? 'unavailable';
+    return text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
+  }
 
-  static List<String> _actions(List<Map> entries) =>
-      entries.map((entry) => entry['action']).whereType<String>().toList();
+  static List<CareTip> _legacyTips(List<Map> entries) => [
+        for (final entry in entries)
+          if (entry['action'] case final String action)
+            (
+              text: action,
+              referenceIds: List<String>.from(
+                  (entry['reference_ids'] as List? ?? const [])
+                      .whereType<String>()),
+            ),
+      ];
 
   Widget _reviewFinding(DamageItem item, Map<String, bool> savedReview) {
     final decision = _decisions[item.id];
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
         children: [
-          Text('${item.label} · ${_display(item.view)}',
-              style: Theme.of(context).textTheme.titleSmall),
-          Text(switch (savedReview[item.id]) {
-            true => 'Confirmed by you',
-            false => 'Dismissed',
-            null => 'Candidate · ${item.confidencePercent}% detector score',
-          }),
-          if (item.imageIndex >= 0 && item.imageIndex < result.images.length)
-            TextButton(
-              onPressed: () => _viewFinding(item),
-              child: const Text('View marked photo'),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${_display(item.label)} · ${_display(item.view)}',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text(
+                  switch (savedReview[item.id]) {
+                    true => 'Confirmed by you',
+                    false => 'Dismissed',
+                    null => '${item.confidencePercent}% detector score',
+                  },
+                  style:
+                      const TextStyle(fontSize: 12.5, color: AppColors.inkSoft),
+                ),
+                if (item.imageIndex >= 0 &&
+                    item.imageIndex < result.images.length)
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact),
+                    onPressed: () => _viewFinding(item),
+                    icon: const Icon(Icons.image_search_rounded, size: 16),
+                    label: const Text('See on photo'),
+                  ),
+              ],
             ),
-          Wrap(
-            spacing: 8,
-            children: [
-              ChoiceChip(
-                label: const Text('Confirm'),
-                selected: decision == true,
-                onSelected: _saving
-                    ? null
-                    : (_) => setState(() => _decisions[item.id] = true),
-              ),
-              ChoiceChip(
-                label: const Text('Dismiss'),
-                selected: decision == false,
-                onSelected: _saving
-                    ? null
-                    : (_) => setState(() => _decisions[item.id] = false),
-              ),
+          ),
+          SegmentedButton<bool>(
+            showSelectedIcon: false,
+            emptySelectionAllowed: true,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            segments: const [
+              ButtonSegment(
+                  value: true,
+                  tooltip: 'Confirm',
+                  icon: Icon(Icons.check_rounded, size: 18)),
+              ButtonSegment(
+                  value: false,
+                  tooltip: 'Dismiss',
+                  icon: Icon(Icons.close_rounded, size: 18)),
             ],
+            selected: {if (decision != null) decision},
+            onSelectionChanged: _saving
+                ? null
+                : (value) => setState(() {
+                      if (value.isEmpty) {
+                        _decisions.remove(item.id);
+                      } else {
+                        _decisions[item.id] = value.first;
+                      }
+                    }),
           ),
         ],
       ),
@@ -166,94 +187,60 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     );
   }
 
-  Future<void> _comparePhotos(List<ScanResult> previousScans) async {
-    final previous = await showDialog<ScanResult>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Choose an earlier scan of this garment'),
-        children: [
-          for (final scan in previousScans)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, scan),
-              child: Text('${scan.garmentName} · ${_scanDate(scan)}'),
-            ),
-        ],
-      ),
-    );
-    if (previous == null || !mounted) return;
-    final photos = [
-      for (final scan in [previous, result])
-        (
-          scan,
-          scan.images.firstWhere((photo) => photo.view == 'front').readBytes()
+  Widget _careCards() {
+    final care = result.section('ai_care');
+    final laundry = result.care;
+    final providedBy = care['provided_by'] as String? ??
+        (care['status'] == 'model_suggestion' && care['model'] is String
+            ? '${care['model']} care model'
+            : 'FabriCare care rules');
+    var tips = careTipsFrom(care['care_tips']);
+    if (tips.isEmpty) {
+      // Scans saved before the care advice existed.
+      tips = _legacyTips(
+          _entries(result.section('care_guidance')['recommendations']));
+    }
+    var laundryTips = careTipsFrom(care['laundry_tips']);
+    if (laundryTips.isEmpty) {
+      laundryTips = careTipsFrom(care['reasons']);
+    }
+    if (laundryTips.isEmpty) {
+      laundryTips = _legacyTips(_entries(laundry['general_guidance']));
+    }
+    final modelLabel = care['label'] as String?;
+    final headline = care['headline'] as String? ??
+        modelLabel ??
+        laundry['laundry_mode'] as String? ??
+        'Check the care label';
+    var alerts = _entries(care['alerts']);
+    if (alerts.isEmpty && care.isEmpty) {
+      alerts = [
+        for (final risk in _entries(result.analysis['risk_alerts']))
+          {'level': 'medium', 'action': risk['action']},
+      ];
+    }
+    return Column(
+      children: [
+        if (tips.isNotEmpty)
+          CareAdviceCard(tips: tips, providedBy: providedBy),
+        LaundryCard(
+          headline: headline,
+          tips: laundryTips,
+          providedBy: providedBy,
+          confidence: headline == modelLabel ? care['confidence'] as num? : null,
+          labelSettings: {
+            if (care['care_label_entered'] == true) 'Care label': 'applied',
+          },
         ),
-    ];
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Compare front photos'),
-        content: SingleChildScrollView(
-          child: SizedBox(
-            width: 540,
-            child: Column(
-              children: [
-                const Text(
-                  'Compare the same areas under similar lighting and framing. '
-                  'Differences in the photos can affect what you see.',
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final (scan, photo) in photos)
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Column(
-                            children: [
-                              Text(_scanDate(scan)),
-                              FutureBuilder(
-                                future: photo,
-                                builder: (context, snapshot) {
-                                  if (snapshot.hasError) {
-                                    return const Text('Photo unavailable');
-                                  }
-                                  final bytes = snapshot.data;
-                                  if (bytes == null) {
-                                    return const SizedBox(height: 180);
-                                  }
-                                  return Image.memory(
-                                    bytes,
-                                    height: 180,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (_, __, ___) =>
-                                        const Text('Photo unavailable'),
-                                  );
-                                },
-                              ),
-                              Text(scan.healthRating),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
+        if (alerts.isNotEmpty)
+          SectionCard(
+            title: 'Care alerts',
+            icon: Icons.warning_amber_rounded,
+            child: CareAlertList(alerts: alerts),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+      ],
     );
   }
-
-  String _scanDate(ScanResult scan) =>
-      MaterialLocalizations.of(context).formatMediumDate(scan.dateScanned);
 
   @override
   Widget build(BuildContext context) {
@@ -264,34 +251,12 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     final fabric = result.section('fabric');
     final condition = result.section('condition_assessment');
     final lifespan = result.section('lifespan');
-    final outlook = result.section('six_month_outlook');
-    final guidance = result.section('care_guidance');
     final laundry = result.care;
-    final risks = _entries(result.analysis['risk_alerts']);
-    final recommendations = _entries(guidance['recommendations']);
     final observations = _entries(condition['observations']);
     final references = {
       for (final ref in _entries(result.analysis['references'])) ref['id']: ref,
     };
-    final confirmedSettings = laundry['confirmed_settings'] as Map? ?? const {};
-    final legacyWash = laundry['laundry_mode'] as String?;
-    final enteredWash = confirmedSettings['Wash'] ??
-        (laundry['confirmed_settings'] == null &&
-                !const {
-                  'Unknown',
-                  'Verify the care label',
-                  'Check the care label'
-                }.contains(legacyWash)
-            ? legacyWash
-            : null);
-    final previousScans = result.images.any((photo) => photo.view == 'front')
-        ? AppData.instance.history
-            .where((scan) =>
-                scan.userId == result.userId &&
-                scan.dateScanned.isBefore(result.dateScanned) &&
-                scan.images.any((photo) => photo.view == 'front'))
-            .toList()
-        : const <ScanResult>[];
+    final earlier = earlierScans(result, AppData.instance.history);
     final score = result.analysis['fabric_confidence'] as num?;
     final needsConfirmation =
         result.analysis['fabric_needs_confirmation'] == true ||
@@ -301,83 +266,43 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
     final scoreText =
         score?.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
     final perImage = result.analysis['per_image'] as List? ?? const [];
-    final secondOpinion = result.section('fabric_second_opinion');
-    final secondLabel = secondOpinion['fabric_type'];
-    final secondModel = secondOpinion['model'];
-    final frontPhoto =
-        result.images.where((photo) => photo.view == 'front').firstOrNull;
-    final visionLabel = _visionOpinion?['fabric_type'];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('FabriCare Result')),
+      appBar: AppBar(title: const Text('Scan result')),
+      bottomNavigationBar: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: AppColors.background,
+          border: Border(top: BorderSide(color: AppColors.border)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (_) => const ScanScreen())),
+              icon: const Icon(Icons.camera_alt_rounded),
+              label: const Text('Scan another garment'),
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
+        bottom: false,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
           children: [
             FabricResultHero(
               result: result,
               score: score?.toDouble(),
               scoreText: scoreText,
               needsConfirmation: needsConfirmation,
-              threshold: (fabric['threshold_percent'] as num?)?.toDouble() ?? 85,
+              threshold:
+                  (fabric['threshold_percent'] as num?)?.toDouble() ?? 85,
             ),
-            if (result.section('ai_care') case final care
-                when care['label'] is String)
-              AiCareCard(care: care),
-            if (secondOpinion.isNotEmpty)
-              SectionCard(
-                title: 'AI second opinion',
-                icon: Icons.fact_check_outlined,
-                child: _details([
-                  if (secondLabel is String && secondModel is String)
-                    '$secondModel suggests $secondLabel.',
-                  switch (secondOpinion['status']) {
-                    'agrees' =>
-                      'Both models suggest the same fabric. Check the fiber label if you need to confirm the composition.',
-                    'disagrees' =>
-                      'The models suggest different fabrics. Treat the fabric result as provisional and check the fiber label or capture another view.',
-                    'inconclusive' =>
-                      'The models could not settle on one fabric. Try another clear view.',
-                    _ => 'The second model was unavailable for this scan.',
-                  },
-                ]),
-              ),
-            if (frontPhoto != null)
-              SectionCard(
-                title: 'Local Qwen opinion',
-                icon: Icons.visibility_outlined,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Qwen3-VL reviews the front photo on your PC.'),
-                    if (_checkingVision) ...[
-                      const LinearProgressIndicator(),
-                      const Text('Qwen is reviewing the photo…'),
-                    ] else if (_visionError != null)
-                      Text(_visionError!)
-                    else if (_visionOpinion != null)
-                      Text(switch (visionLabel) {
-                        null => 'Qwen returned no final answer.',
-                        'uncertain' => 'Qwen was uncertain about the fabric.',
-                        _ when result.fabricUncertain =>
-                          'Qwen suggests $visionLabel. FabriCare is uncertain.',
-                        _ when visionLabel == result.fabricType =>
-                          'Both suggest $visionLabel. Check the fiber label to confirm.',
-                        _ =>
-                          'Qwen suggests $visionLabel. FabriCare suggests ${result.fabricType}. Check the fiber label.',
-                      }),
-                    OutlinedButton(
-                      onPressed:
-                          _checkingVision ? null : () => _askVision(frontPhoto),
-                      child: Text(_visionOpinion == null
-                          ? 'Ask Qwen'
-                          : 'Run Qwen again'),
-                    ),
-                  ],
-                ),
-              ),
+            _careCards(),
             SectionCard(
-              title: 'Visible Fabric Condition',
+              title: 'Fabric condition',
               icon: Icons.favorite_outline,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -386,158 +311,105 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   if (result.section('health_assessment') case final health
                       when health['score'] is num)
                     HealthScoreBadge(health: health),
-                  Text(result.healthRating),
-                  if (condition['quality_limited'] == true)
-                    const Text('Photo quality may hide details.'),
-                  if (condition['coverage_limited'] == true)
-                    const Text('Some photos could not be checked for damage.'),
-                  for (final item in observations)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text('${_display(item['type'])} · '
-                          '${item['location'] ?? _display(item['view'])} · '
-                          '${item['confirmed'] == true || item['provenance'] == 'user_reported' ? 'Confirmed by you' : 'Candidate'}'),
+                  Text(result.healthRating,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  if (condition['quality_limited'] == true ||
+                      condition['coverage_limited'] == true)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text('Photo quality may hide some details.',
+                          style: TextStyle(
+                              fontSize: 12.5, color: AppColors.inkSoft)),
                     ),
+                  if (observations.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final item in observations)
+                          Chip(
+                            visualDensity: VisualDensity.compact,
+                            avatar: Icon(
+                                item['confirmed'] == true
+                                    ? Icons.check_circle_rounded
+                                    : Icons.help_outline_rounded,
+                                size: 16),
+                            label: Text(
+                                '${_display(item['type'])} · ${item['location'] ?? _display(item['view'])}'),
+                          ),
+                      ],
+                    ),
+                  ],
                   if (damage.isNotEmpty)
                     ExpansionTile(
-                      key: const PageStorageKey('damage-review'),
                       tilePadding: EdgeInsets.zero,
-                      title: const Text('Review Damage'),
+                      title: const Text('Review findings',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: const Text('Confirm or dismiss each mark',
+                          style: TextStyle(fontSize: 12.5)),
                       initiallyExpanded:
                           savedReview.isEmpty && damage.length <= 2,
-                      expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
-                            'Check each marked area. You can save the findings you have reviewed so far.'),
                         for (final item in damage)
                           _reviewFinding(item, savedReview),
+                        const SizedBox(height: 12),
                         FilledButton(
                           onPressed: !_saving &&
                                   pendingChanges &&
                                   _decisions.isNotEmpty
                               ? _saveReview
                               : null,
-                          child:
-                              Text(_saving ? 'Saving…' : 'Save damage review'),
+                          child: Text(_saving ? 'Saving…' : 'Save review'),
                         ),
-                        if (pendingChanges)
-                          const Text(
-                              'Save to update the assessment and recommendations.'),
                       ],
                     ),
                 ],
               ),
             ),
             SectionCard(
-              title: 'Durability and remaining lifespan',
+              title: 'Remaining lifespan',
               icon: Icons.hourglass_bottom,
               child: lifespan['status'] == 'experimental_estimate' &&
                       lifespan['remaining_months'] is num
                   ? LifespanEstimate(lifespan: lifespan)
                   : _details([
                       lifespan['summary'] as String? ??
-                          'Check seams and high-friction areas for changes across scans.',
-                      'Remaining months: undetermined',
-                      if (lifespan.isEmpty) 'Rescan for current guidance.',
+                          'Rescan for a lifespan estimate.',
                     ]),
             ),
-            SectionCard(
-              title: 'Six-Month Condition Outlook',
-              icon: Icons.timeline,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _details([
-                    'Care scenario',
-                    ...List<String>.from(
-                        outlook['concerns'] as List? ?? const []),
-                    if (outlook.isEmpty)
-                      'Save a new scan for a baseline comparison.',
-                  ]),
-                  if (previousScans.isNotEmpty)
-                    OutlinedButton.icon(
-                      onPressed: () => _comparePhotos(previousScans),
-                      icon: const Icon(Icons.compare_outlined),
-                      label: const Text('Compare with an earlier scan'),
-                    ),
-                ],
-              ),
-            ),
-            SectionCard(
-              title: 'Care Recommendations',
-              icon: Icons.checkroom_outlined,
-              child: _details([
-                ..._actions(recommendations),
-                if (recommendations.isEmpty)
-                  'Set aside bleach and direct heat until you can check the garment instructions.',
-              ]),
-            ),
-            SectionCard(
-              title: 'Laundry Suggestions',
-              icon: Icons.local_laundry_service_outlined,
-              child: _details([
-                'Confirmed Laundry Instructions',
-                enteredWash == null
-                    ? 'Confirmed washing mode: Unknown'
-                    : 'Wash · $enteredWash',
-                for (final entry in confirmedSettings.entries)
-                  if (entry.key != 'Wash') '${entry.key} · ${entry.value}',
-                if (laundry['intensity'] case final String intensity
-                    when intensity.isNotEmpty)
-                  intensity,
-                'General Fabric Care Guidance',
-                ..._actions(_entries(laundry['general_guidance'])),
-                if (_entries(laundry['general_guidance']).isEmpty)
-                  'Set uncertain items aside before laundering.',
-                'Unknown or Restricted Settings',
-                ...List<String>.from(laundry['unknown_settings'] as List? ??
-                    const [
-                      'Check the complete instructions for any missing settings.'
-                    ]),
-              ]),
-            ),
-            if (risks.isNotEmpty)
+            if (earlier.isNotEmpty)
               SectionCard(
-                title: 'Care Risk Alerts',
-                icon: Icons.warning_amber_rounded,
-                child: _details(_actions(risks)),
+                title: 'Track changes',
+                icon: Icons.compare_rounded,
+                trailing: FilledButton.tonalIcon(
+                  onPressed: () => showScanCompareSheet(context,
+                      current: result, earlier: earlier),
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                  label: const Text('Compare'),
+                ),
+                child: Text(
+                  '${earlier.length} earlier ${earlier.length == 1 ? 'scan' : 'scans'} to compare with.',
+                  style: const TextStyle(color: AppColors.inkSoft),
+                ),
               ),
             SectionCard(
-              title: 'Scientific Basis',
+              title: 'Sources and method',
               icon: Icons.article_outlined,
               child: ExpansionTile(
-                key: const PageStorageKey('why-this-result'),
                 tilePadding: EdgeInsets.zero,
                 title: const Text('Why this result?'),
                 expandedCrossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _details([
-                    if (result.fabricModelName case final String model) model,
+                    if (result.fabricModelName case final String model)
+                      'Fabric model · $model',
                     if (fabric['reasoning'] case final String reason) reason,
-                    if (result.hasScientificAssessment) result.healthStatusNote,
-                    if (lifespan['explanation'] case final String explanation)
-                      explanation,
-                    if (outlook['assumptions'] case final String assumptions)
-                      assumptions,
-                    if (outlook['explanation'] case final String explanation)
-                      explanation,
+                    if (result.hasScientificAssessment)
+                      result.healthStatusNote,
                     if (laundry['explanation'] case final String explanation)
                       explanation,
-                    for (final entry in [...recommendations, ...risks]) ...[
-                      entry['action'] as String,
-                      [
-                        entry['selected_because'],
-                        entry['reason'],
-                        entry['restriction']
-                      ]
-                          .whereType<String>()
-                          .where((text) => text.isNotEmpty)
-                          .join(' '),
-                      (entry['reference_ids'] as List? ?? const [])
-                          .map((id) => references[id]?['title'])
-                          .whereType<String>()
-                          .join(' · '),
-                    ],
                   ]),
                   for (final reference in references.values)
                     TextButton.icon(
@@ -549,27 +421,23 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                   if (result.hasScientificAssessment)
                     ExpansionTile(
                       tilePadding: EdgeInsets.zero,
-                      title: const Text('Advanced scientific details'),
+                      title: const Text('Advanced details'),
                       children: [
                         _details([
                           'Method · ${result.analysis['methodology_version']}',
                           result.usageStatus,
                           if (fabric['threshold_percent']
                               case final num threshold)
-                            'Model review threshold · $threshold%. Scores are uncalibrated.',
+                            'Fabric review threshold · $threshold%',
                           for (final (name, data) in [
                             ('Condition', condition),
                             ('Lifespan', lifespan),
-                            ('Outlook', outlook),
-                            ('Care', guidance),
                             ('Laundry', laundry),
                           ])
                             '$name · ${data['status']} · ${data['provenance']}',
                           for (final item in observations)
                             '${item['type']} · ${item['explanation']} '
                                 '${item['area_ratio'] is num ? 'Box coverage: ${((item['area_ratio'] as num) * 100).toStringAsFixed(1)}% of photo.' : ''}',
-                          'Box coverage = (box width × box height) ÷ (photo width × photo height). '
-                              'The box center identifies the region in a three-by-three photo grid.',
                         ]),
                       ],
                     ),
@@ -577,25 +445,34 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
               ),
             ),
             if (result.images.isNotEmpty)
-              ExpansionTile(
-                title: const Text('Scan photos'),
-                children: [
-                  for (var i = 0; i < result.images.length; i++) ...[
-                    Text(_display(result.images[i].view)),
-                    DetectionImage(scan: result, imageIndex: i),
-                    if (i < perImage.length &&
-                        perImage[i]['quality']?['passed'] == false)
-                      Text(
-                          'Quality warning · ${perImage[i]['quality']['reason']}'),
+              SectionCard(
+                title: 'Scan photos',
+                icon: Icons.photo_library_outlined,
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text(
+                      '${result.images.length} ${result.images.length == 1 ? 'photo' : 'photos'} with marked findings'),
+                  children: [
+                    for (var i = 0; i < result.images.length; i++) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6, top: 4),
+                          child: Text(_display(result.images[i].view),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                      DetectionImage(scan: result, imageIndex: i),
+                      if (i < perImage.length &&
+                          perImage[i]['quality']?['passed'] == false)
+                        Text(
+                            'Quality warning · ${perImage[i]['quality']['reason']}'),
+                      const SizedBox(height: 10),
+                    ],
                   ],
-                ],
+                ),
               ),
-            OutlinedButton.icon(
-              onPressed: () => Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => const ScanScreen())),
-              icon: const Icon(Icons.camera_alt_outlined),
-              label: const Text('Scan another garment'),
-            ),
           ],
         ),
       ),

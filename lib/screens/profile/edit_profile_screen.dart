@@ -102,20 +102,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       : null,
                 ),
                 const SizedBox(height: 14),
+                // The email identifies the Google account, so it is read-only.
                 TextFormField(
                   controller: _email,
-                  enabled: !_saving,
-                  autofillHints: const [AutofillHints.email],
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
+                  enabled: false,
                   decoration: const InputDecoration(
                     labelText: 'Email address',
+                    helperText: 'From your Google account',
                     prefixIcon: Icon(Icons.email_outlined),
                   ),
-                  validator: (value) =>
-                      value == null || !value.trim().contains('@')
-                          ? 'Enter a valid email'
-                          : null,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(

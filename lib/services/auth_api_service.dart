@@ -63,36 +63,18 @@ class AuthApiService {
     return headers;
   }
 
-  Future<User> register({
-    required String fullName,
-    required String email,
-    required String password,
-  }) async {
+  /// Exchanges a Google ID token for a FabriCare session. The server creates
+  /// the account on first sign-in, named after the Google profile.
+  Future<({User user, String? picture})> signInWithGoogle(
+      String idToken) async {
     final response = await _send(http.post(
-      Uri.parse('${ApiConfig.baseUrl}/auth/register'),
+      Uri.parse('${ApiConfig.baseUrl}/auth/google'),
       headers: _headers(),
-      body: jsonEncode({
-        'full_name': fullName,
-        'email': email,
-        'password': password,
-      }),
+      body: jsonEncode({'id_token': idToken}),
     ));
-    return _parseAuthResponse(response);
-  }
-
-  Future<User> login({
-    required String email,
-    required String password,
-  }) async {
-    final response = await _send(http.post(
-      Uri.parse('${ApiConfig.baseUrl}/auth/login'),
-      headers: _headers(),
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-      }),
-    ));
-    return _parseAuthResponse(response);
+    final user = await _parseAuthResponse(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return (user: user, picture: body['picture'] as String?);
   }
 
   Future<User?> fetchCurrentUser() async {
@@ -151,24 +133,6 @@ class AuthApiService {
 
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     return User.fromJson(body['user'] as Map<String, dynamic>);
-  }
-
-  Future<void> changePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    final response = await http.put(
-      Uri.parse('${ApiConfig.baseUrl}/auth/password'),
-      headers: _headers(withAuth: true),
-      body: jsonEncode({
-        'current_password': currentPassword,
-        'new_password': newPassword,
-      }),
-    );
-
-    if (response.statusCode != 200) {
-      throw AuthApiException(_errorMessage(response));
-    }
   }
 
   Future<User> _parseAuthResponse(http.Response response) async {

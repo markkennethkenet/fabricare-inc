@@ -19,5 +19,8 @@ export PUB_CACHE="${VERCEL_CACHE_DIR:-/tmp}/fabricare-pub-cache"
 cd "$repo_dir"
 "$sdk_dir/bin/flutter" config --no-analytics
 "$sdk_dir/bin/flutter" pub get --enforce-lockfile
+# GOOGLE_WEB_CLIENT_ID (a public OAuth client ID) turns on Google sign-in when set.
 "$sdk_dir/bin/flutter" build web --release --no-pub \
-  --dart-define=API_BASE_URL=/api --output="$repo_dir/web/dist"
+  --dart-define=API_BASE_URL=/api \
+  --dart-define=GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-}" \
+  --output="$repo_dir/web/dist"

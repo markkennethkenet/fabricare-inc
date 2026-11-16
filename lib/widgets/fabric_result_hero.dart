@@ -48,14 +48,14 @@ class FabricResultHero extends StatelessWidget {
     }
     if (value >= threshold) {
       return (
-        label: 'High model score',
+        label: 'Confident result',
         color: AppColors.sage,
         icon: Icons.verified_rounded
       );
     }
-    if (value >= 60) {
+    if (value >= threshold - 15) {
       return (
-        label: 'Moderate model score',
+        label: 'Likely · worth a check',
         color: AppColors.mustard,
         icon: Icons.adjust_rounded
       );
@@ -235,7 +235,7 @@ class FabricResultHero extends StatelessWidget {
           if (needsConfirmation && !result.fabricUncertain) ...[
             const SizedBox(height: 10),
             const Text(
-              'Check the fibre label or add another clear photo to confirm.',
+              'Check the fibre label to confirm.',
               style: TextStyle(color: AppColors.inkSoft, fontSize: 13),
             ),
           ],

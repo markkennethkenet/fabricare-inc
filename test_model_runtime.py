@@ -132,6 +132,7 @@ class HalfSizeCnnTests(unittest.TestCase):
         loaded = FabricCNN(directory)
         self.assertEqual(loaded.name, "Test CNN (V4)")
         self.assertEqual(loaded.test_accuracy, 86.4)
+        self.assertEqual(loaded.review_threshold, 60.0)  # V4 default for label-smoothed scores
         photo = _png(Image.fromarray(np.random.default_rng(0).integers(0, 255, (120, 90, 3), dtype=np.uint8)))
         batch = prepare_mobilenet_v2_image(photo)
         np.testing.assert_allclose(np.asarray(loaded.model(batch)), np.asarray(model(batch)), atol=2e-3)

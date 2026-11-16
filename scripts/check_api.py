@@ -95,6 +95,8 @@ def main(require_database=False):
         assert body["lifespan"]["remaining_months_low"] <= body["estimated_remaining_months"]
         assert body["six_month_outlook"]["status"] == "insufficient_evidence"
         assert body["ai_care"]["laundry_mode"] and isinstance(body["ai_care"]["alerts"], list)
+        assert 1 <= len(body["ai_care"]["care_tips"]) <= 3 and 1 <= len(body["ai_care"]["laundry_tips"]) <= 3
+        assert body["ai_care"]["headline"] and body["ai_care"]["provided_by"]
         assert body["projected_condition_after_6_months"] is None
         assert body["laundry_settings"]["max_temperature_c"] is None
         assert body["references"]

@@ -14,4 +14,5 @@ scipy==1.15.3
 Pillow==12.3.0
 mysql-connector-python==9.7.0
 python-dotenv==1.2.2
+google-auth==2.62.2
 pi-heif==1.4.0

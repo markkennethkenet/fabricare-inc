@@ -5,7 +5,6 @@ import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/section_card.dart';
 import '../auth/login_screen.dart';
-import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -30,6 +29,7 @@ class ProfileScreen extends StatelessWidget {
             final styles = Theme.of(context).textTheme;
             final displayName =
                 user.fullName.trim().isEmpty ? 'Your account' : user.fullName;
+            final photo = AuthService.instance.photoUrl;
             return Scaffold(
               appBar: AppBar(title: const Text('Profile')),
               body: SafeArea(
@@ -51,18 +51,32 @@ class ProfileScreen extends StatelessWidget {
                                 radius: 25,
                                 backgroundColor: const Color(0xFF4D6753),
                                 foregroundColor: AppColors.surface,
+                                foregroundImage: photo == null
+                                    ? null
+                                    : NetworkImage(photo),
+                                onForegroundImageError:
+                                    photo == null ? null : (_, __) {},
                                 child: Text(user.initials,
                                     style: styles.titleLarge
                                         ?.copyWith(color: AppColors.surface)),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: Text(
-                                  displayName,
-                                  style: styles.headlineSmall?.copyWith(
-                                    color: AppColors.surface,
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      displayName,
+                                      style: styles.headlineSmall?.copyWith(
+                                        color: AppColors.surface,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const Text('Signed in with Google',
+                                        style: TextStyle(
+                                            color: Color(0xFFD7E2D4),
+                                            fontSize: 12.5)),
+                                  ],
                                 ),
                               ),
                             ],
@@ -109,14 +123,6 @@ class ProfileScreen extends StatelessWidget {
                     _SettingsGroup(
                       title: 'Settings',
                       tiles: [
-                        _SettingsTile(
-                          icon: Icons.lock_outline_rounded,
-                          label: 'Change password',
-                          onTap: () => Navigator.of(context).push<void>(
-                            MaterialPageRoute(
-                                builder: (_) => const ChangePasswordScreen()),
-                          ),
-                        ),
                         _SettingsTile(
                           icon: Icons.history_rounded,
                           label: 'Scan history',
@@ -196,9 +202,9 @@ class ProfileScreen extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Log out?',
+        title: const Text('Sign out?',
             style: TextStyle(fontWeight: FontWeight.w800)),
-        content: const Text('You will be returned to the login screen.'),
+        content: const Text('Your scans stay saved on this device.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -212,7 +218,7 @@ class ProfileScreen extends StatelessWidget {
                 (route) => false,
               );
             },
-            child: const Text('Logout',
+            child: const Text('Sign out',
                 style: TextStyle(
                     color: AppColors.danger, fontWeight: FontWeight.w700)),
           ),
@@ -241,7 +247,7 @@ class ProfileScreen extends StatelessWidget {
           ]),
         ),
         content: const Text(
-          'FabriCare helps you identify fabric types, assess garment condition, and get smart care recommendations to make your clothes last longer.\n\nVersion 1.0.0 · UI Prototype',
+          'Identify fabrics, check garment condition and get care advice that helps clothes last longer.\n\nVersion 1.0.0',
           style: TextStyle(height: 1.5),
         ),
         actions: [
@@ -317,11 +323,12 @@ class _SettingsGroup extends StatelessWidget {
           ),
           child: Column(
             children: List.generate(tiles.length * 2 - 1, (i) {
-              if (i.isOdd)
+              if (i.isOdd) {
                 return Divider(
                     height: 1,
                     indent: 52,
                     color: AppColors.border.withValues(alpha: 0.7));
+              }
               return tiles[i ~/ 2];
             }),
           ),

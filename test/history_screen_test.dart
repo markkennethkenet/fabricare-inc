@@ -78,6 +78,6 @@ void main() {
     expect(find.text('Linen Garment'), findsOneWidget);
     await tester.tap(find.text('Linen Garment'));
     await tester.pumpAndSettle();
-    expect(find.text('Garment Profile'), findsOneWidget);
+    expect(find.text('Saved scan'), findsOneWidget);
   });
 }

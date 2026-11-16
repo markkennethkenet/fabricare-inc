@@ -26,10 +26,17 @@ def validate_image_file(path: str) -> None:
         raise ValueError("Cannot read image. Upload a valid JPG or PNG photo.") from error
 
 
+def review_threshold(model_threshold=None) -> float:
+    """The model's own review threshold when it has one, else HYBRID_ML_CONFIDENCE_THRESHOLD."""
+    if isinstance(model_threshold, (int, float)) and 0 <= model_threshold <= 100:
+        return float(model_threshold)
+    return confidence_threshold()
+
+
 def _fabric_result(ml: dict | None, supported: list[str]) -> dict:
     ml_label = ml.get("fabric_type") if ml else None
     score = ml.get("confidence") if ml else None
-    threshold = confidence_threshold()
+    threshold = review_threshold((ml or {}).get("review_threshold"))
     high = isinstance(score, (int, float)) and score >= threshold
 
     if ml is None:
@@ -46,10 +53,11 @@ def _fabric_result(ml: dict | None, supported: list[str]) -> dict:
         reason = "Prediction confidence is unavailable for this model. Check the garment care label."
     elif high:
         status, final, review = "model_result", ml_label, False
-        reason = "The trained model score meets the configured experimental threshold."
+        reason = f"The trained model score meets the model's {threshold:g}% review threshold."
     else:
         status, final, review = "low_confidence_review", ml_label, True
-        reason = "The trained model score is below the configured experimental threshold; manual review is recommended."
+        reason = (f"The trained model score is below the model's {threshold:g}% review threshold; "
+                  "another photo or the fiber label can confirm it.")
 
     return {
         "ml_prediction": ml_label,

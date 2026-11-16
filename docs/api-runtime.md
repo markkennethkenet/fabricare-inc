@@ -122,9 +122,42 @@ Set these variables in the backend environment or local `.env` (never in Flutter
 
 ```dotenv
 HYBRID_ML_CONFIDENCE_THRESHOLD=85
+# Optional: replaces the built-in Google client IDs; empty turns Google sign-in off.
+# GOOGLE_CLIENT_IDS=<comma-separated OAuth client IDs>
 ```
 
-The 85% threshold is an experimental decision rule. The Decision Tree's class
+The V4 CNN sets its own `review_threshold_percent` (60) in
+`model/fabric_cnn/model_info.json`. It was trained with label smoothing 0.1, which
+caps a six-class score near 92%, so 85% flagged almost every confident scan for
+another photo. Calibrating that value on the validation photos is still recommended.
+
+### Care advice
+
+`ai_care` holds the trained care model's laundry mode plus, written for the scan,
+`care_tips` and `laundry_tips` (at most three sentences each, with reference ids),
+a `headline` (the care label's wash method when the user entered one) and
+`provided_by`. `care_model.care_tips` and `care_model.laundry_tips` choose the
+sentences from the detected damage, fabric, colour, care label and wear and washing
+habits. `/review-damage` refreshes `ai_care` when the app sends the scan's saved
+`care_features`. The local Qwen `/vision-opinion` route was removed, and the app no
+longer asks for the GLCM SVM second opinion.
+
+### Google sign-in
+
+`POST /auth/google` takes `{"id_token": ...}` from Google Sign-In, verifies its
+signature, expiry, issuer and audience (FabriCare's web and Android client IDs, or
+`GOOGLE_CLIENT_IDS`) with `google-auth`, and
+requires a verified email. A new email creates an account named after the Google
+profile with an unusable random password hash; an existing email signs in to that
+account, so its saved scans stay. The response matches `/auth/login` plus `created`
+and `picture`. The app offers Google sign-in only; `/auth/register` and `/auth/login`
+remain for older app builds. The app has the web client ID built in
+(`ApiConfig.googleWebClientId`; `--dart-define=GOOGLE_WEB_CLIENT_ID` overrides it).
+The Android OAuth client is registered for package `com.example.fabricare` and the
+SHA-1 of the debug key that signs the APKs; a different signing key needs its SHA-1
+added. The client secret is not used: the app only needs ID tokens.
+
+The 85% threshold applies to the GLCM models and is an experimental decision rule. The Decision Tree's class
 vote scores are uncalibrated and must not be read as probabilities. The legacy
 12-feature Decision Tree supports five fabrics. All three scanner choices support
 cotton, denim, linen, polyester, silk, and wool. Model

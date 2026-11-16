@@ -154,10 +154,10 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: EditProfileScreen()));
     expect(find.text('Phone number (optional)'), findsOneWidget);
     expect(find.text('Location (optional)'), findsOneWidget);
+    expect(find.text('From your Google account'), findsOneWidget);
     await tester.tap(find.text('Save changes'));
     await tester.pump();
     expect(find.text('Please enter your full name'), findsOneWidget);
-    expect(find.text('Enter a valid email'), findsOneWidget);
   });
 
   testWidgets(
@@ -184,14 +184,14 @@ void main() {
         .pumpWidget(MaterialApp(home: ScanResultScreen(result: result)));
     expect(find.text('Future Blend'), findsOneWidget);
     expect(find.text('88%'), findsOneWidget);
-    expect(find.text('High model score'), findsOneWidget);
+    expect(find.text('Confident result'), findsOneWidget);
     expect(find.textContaining('Future damage'), findsOneWidget);
     final scrollable = find.byType(Scrollable).first;
     await tester.scrollUntilVisible(find.text('Assessment unavailable'), 180,
         scrollable: scrollable);
     expect(find.textContaining('70/100'), findsNothing);
     await tester.scrollUntilVisible(
-        find.text('Remaining months: undetermined'), 180,
+        find.text('Rescan for a lifespan estimate.'), 180,
         scrollable: scrollable);
     expect(find.textContaining('About 12 months'), findsNothing);
     expect(find.text('Normal wash'), findsNothing);
@@ -236,21 +236,47 @@ void main() {
             {'level': 'medium', 'title': 'Felting risk', 'action': 'Avoid hot water.', 'reference_ids': ['H']},
           ],
           'note': 'A suggestion from the scan. Check the garment care label before washing.',
+          'headline': 'Repair before washing',
+          'provided_by': 'Random Forest care model · ConvNeXt-Tiny (V4) fabric result',
+          'care_tips': [
+            {'text': 'Mend the opening before it is washed or worn again.', 'reference_ids': ['I']},
+            {'text': 'Air it out between wears.', 'reference_ids': ['H']},
+            {'text': 'Keep it away from heat and rubbing.', 'reference_ids': ['H']},
+            {'text': 'A fourth tip is never shown.', 'reference_ids': ['H']},
+          ],
+          'laundry_tips': [
+            {'text': 'Mend the opening first, then hand wash it in cool water.', 'reference_ids': ['I']},
+            {'text': 'Use a wool-safe detergent and no bleach.', 'reference_ids': ['H']},
+            {'text': 'Dry it flat on a towel, away from direct heat, and steam rather than iron it.', 'reference_ids': ['H']},
+          ],
         },
       },
     );
     await tester.pumpWidget(MaterialApp(home: ScanResultScreen(result: result)));
-    expect(find.text('AI laundry suggestion'), findsOneWidget);
-    expect(find.text('Repair before washing'), findsOneWidget);
-    expect(find.text('Random Forest'), findsOneWidget);
-    expect(find.text('97% model confidence'), findsOneWidget);
-    expect(find.text('Possible opening'), findsOneWidget);
-    expect(find.text('Felting risk'), findsOneWidget);
     final scrollable = find.byType(Scrollable).first;
+    expect(find.text('Care recommendations'), findsOneWidget);
+    expect(find.text('Mend the opening before it is washed or worn again.'),
+        findsOneWidget);
+    expect(find.text('A fourth tip is never shown.'), findsNothing);
+    expect(
+        find.text(
+            'Provided by our Random Forest care model · ConvNeXt-Tiny (V4) fabric result'),
+        findsNWidgets(2));
+    await tester.scrollUntilVisible(find.text('Laundry suggestion'), 200,
+        scrollable: scrollable);
+    expect(find.text('Repair before washing'), findsOneWidget);
+    expect(find.text('97% model confidence'), findsOneWidget);
+    expect(find.text('Use a wool-safe detergent and no bleach.'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Felting risk'), 200,
+        scrollable: scrollable);
+    expect(find.text('Possible opening'), findsOneWidget);
+    expect(find.text('AI second opinion'), findsNothing);
+    expect(find.textContaining('Qwen'), findsNothing);
+    expect(find.textContaining('Six-Month'), findsNothing);
+    expect(find.text('Scan another garment'), findsOneWidget); // pinned below the list
     await tester.scrollUntilVisible(find.text('Fabric health 80/100'), 200, scrollable: scrollable);
     expect(find.text('Good'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('About 27–63 months'), 200, scrollable: scrollable);
-    expect(find.text('Remaining months: undetermined'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -308,21 +334,20 @@ void main() {
         .pumpWidget(MaterialApp(home: ScanResultScreen(result: result)));
     expect(find.text('Cotton'), findsOneWidget);
     expect(find.text('62.5%'), findsOneWidget);
-    expect(find.text('Moderate model score'), findsOneWidget);
+    expect(find.text('Low model score'), findsOneWidget);
     expect(find.text('Needs confirmation'), findsOneWidget);
     final nameStyle = tester.widget<Text>(find.text('Cotton')).style;
     expect(nameStyle?.fontSize, greaterThanOrEqualTo(40));
-    expect(find.text('stain · Front photo · upper left · Candidate'),
-        findsOneWidget);
     final scrollable = find.byType(Scrollable).first;
-    await tester.scrollUntilVisible(find.text('Care Recommendations'), 180,
+    await tester.scrollUntilVisible(find.text('Care recommendations'), 180,
         scrollable: scrollable);
     expect(find.text('Avoid strong stain treatments.'), findsOneWidget);
     expect(find.text('If this garment is cotton, sort it by colour.'),
         findsOneWidget);
     await tester.scrollUntilVisible(find.text('Why this result?'), 180,
         scrollable: scrollable);
-    expect(find.text('Advanced scientific details'), findsNothing);
+    expect(find.text('Stain · Front photo · upper left'), findsOneWidget);
+    expect(find.text('Advanced details'), findsNothing);
     final why = find.text('Why this result?');
     await tester.ensureVisible(why);
     await tester.pumpAndSettle();

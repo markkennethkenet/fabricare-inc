@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../data/mock_data.dart';
 import '../../models/scan_result.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/care_insights.dart';
 import '../../widgets/fabric_thumb.dart';
 import '../../widgets/section_card.dart';
 import '../scan/scan_result_screen.dart';
@@ -26,7 +27,7 @@ class _GarmentProfileScreenState extends State<GarmentProfileScreen> {
       orElse: () => widget.result,
     );
     return Scaffold(
-      appBar: AppBar(title: const Text('Garment Profile')),
+      appBar: AppBar(title: const Text('Saved scan')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
@@ -61,55 +62,51 @@ class _GarmentProfileScreenState extends State<GarmentProfileScreen> {
                       label: 'Fabric',
                       value: r.fabricUncertain || !r.hasFabricScore
                           ? r.fabricLabel
-                          : '${r.fabricType} (${r.confidencePercent}% model score)'),
+                          : '${r.fabricLabel} · ${r.confidencePercent}%'),
                   if (r.fabricModelName case final modelName?)
                     LabelRow(
                         icon: Icons.tune,
-                        label: 'Fabric model',
+                        label: 'Model',
                         value: modelName),
-                  if (r.hasHealthAssessment)
+                  if (r.healthScore case final int score)
                     LabelRow(
                         icon: Icons.favorite_outline_rounded,
                         label: 'Health',
+                        value:
+                            '$score/100${r.healthGrade == null ? '' : ' · ${r.healthGrade}'}')
+                  else if (r.hasHealthAssessment)
+                    LabelRow(
+                        icon: Icons.favorite_outline_rounded,
+                        label: 'Condition',
                         value: r.healthRating),
                   LabelRow(
                       icon: Icons.hourglass_bottom_rounded,
                       label: 'Lifespan',
-                      value: r.lifespanRange),
+                      value: r.section('lifespan')['remaining_months'] is num
+                          ? r.lifespanRange
+                          : 'Not estimated'),
                   LabelRow(
                       icon: Icons.local_laundry_service_outlined,
                       label: 'Laundry',
-                      value: r.laundryMode),
+                      value: r.laundryHeadline),
                 ],
               ),
             ),
-            SectionCard(
-              title: 'Saved Care Recommendation',
-              icon: Icons.bookmark_outline_rounded,
-              child: Column(
-                children: [
-                  LabelRow(
-                      icon: Icons.local_laundry_service_outlined,
-                      label: 'Wash',
-                      value: r.washMethod),
-                  LabelRow(
-                      icon: Icons.air_rounded,
-                      label: 'Dry',
-                      value: r.dryMethod),
-                  LabelRow(
-                      icon: Icons.iron_outlined,
-                      label: 'Iron',
-                      value: r.ironLevel),
-                ],
+            if (careTipsFrom(r.section('ai_care')['care_tips'])
+                case final tips when tips.isNotEmpty)
+              CareAdviceCard(
+                tips: tips,
+                providedBy: r.section('ai_care')['provided_by'] as String? ??
+                    'FabriCare care model',
               ),
-            ),
-            OutlinedButton(
+            ElevatedButton.icon(
                 onPressed: () async {
                   await Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => ScanResultScreen(result: r)));
                   if (mounted) setState(() {});
                 },
-                child: const Text('View all images and detections')),
+                icon: const Icon(Icons.open_in_full_rounded, size: 18),
+                label: const Text('Open full result')),
             const SizedBox(height: 12),
             SectionCard(
               title: 'Notes',

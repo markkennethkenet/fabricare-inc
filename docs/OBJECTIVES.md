@@ -99,5 +99,9 @@ column, which includes the CNN's fabric errors, is the realistic figure for the 
 - Every scan returns `ai_care` ([`fabricare_api.ai_care_for`](../fabricare_api.py)): the laundry mode from the
   trained care model (objective 2) with its confidence, the referenced reasons, and alerts for openings, stains,
   pilling, colour bleeding, felting, water marks, heat sensitivity and dye transfer, each with sources.
-- The result screen shows these in the *AI laundry suggestion* card. Without a trained model, or for an
-  uncertain fabric, the reference rules are used and labelled as such.
+- It also carries up to three *care recommendations* and three *laundry* sentences chosen for that scan
+  (`care_model.care_tips`, `care_model.laundry_tips`) from the detected damage, fabric, colour, any care label
+  the user entered and their wear and washing habits. A care label always sets the limits.
+- The result screen shows these in the *Care recommendations* and *Laundry suggestion* cards, each marked
+  "Provided by our Decision Tree care model · ConvNeXt-Tiny (V4) fabric result". Without a trained model, or for
+  an uncertain fabric, the reference rules are used and labelled as such.

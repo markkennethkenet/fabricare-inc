@@ -5,7 +5,8 @@ import 'package:fabricare/models/scan_result.dart';
 import 'package:fabricare/screens/scan/scan_result_screen.dart';
 import 'package:fabricare/screens/scan/scan_screen.dart';
 import 'package:fabricare/services/fabricare_api_service.dart';
-import 'package:fabricare/widgets/section_card.dart';
+import 'package:fabricare/widgets/fabric_result_hero.dart';
+import 'package:fabricare/widgets/scan_compare_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,7 +19,7 @@ void main() {
   const classifier =
       String.fromEnvironment('SCAN_TEST_CLASSIFIER', defaultValue: 'cnn');
   const modelNames = {
-    'cnn': 'MobileNetV2 (six fabrics)',
+    'cnn': 'ConvNeXt-Tiny (V4)',
     'svm': 'GLCM + SVM',
     'glcm_dt': 'GLCM + Decision Tree',
   };
@@ -137,36 +138,22 @@ void main() {
       expect(saved.analysis['fabric']['verification_status'],
           expectedVerification);
     }
-    await tester.scrollUntilVisible(find.text('Fabric Identification'), 300,
-        scrollable: find.descendant(
-            of: find.byType(ScanResultScreen),
-            matching: find.byType(Scrollable)));
-    final fabricCard =
-        find.widgetWithText(SectionCard, 'Fabric Identification');
-    expect(
-        find.descendant(
-          of: fabricCard,
-          matching: find.text(classifier == 'svm'
-              ? saved.fabricType
-              : '${saved.fabricType} — ${(saved.analysis['fabric_confidence'] as num).toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')}% model score'),
-        ),
-        findsOneWidget);
+    expect(find.text(FabricResultHero.displayName(saved.fabricType)),
+        findsWidgets);
     final resultsScroller = find.descendant(
         of: find.byType(ScanResultScreen), matching: find.byType(Scrollable));
-    await tester.scrollUntilVisible(
-        find.text('Six-Month Condition Outlook'), 260,
+    await tester.scrollUntilVisible(find.text('Laundry suggestion'), 260,
         scrollable: resultsScroller);
-    expect(find.text('Care scenario'), findsOneWidget);
-    final compare = find.text('Compare with an earlier scan');
+    expect(find.text('Dry clean · per your care label'), findsOneWidget);
+    expect(find.text('Six-Month Condition Outlook'), findsNothing);
+    final compare = find.text('Compare');
     await tester.scrollUntilVisible(compare, 200, scrollable: resultsScroller);
     await tester.ensureVisible(compare);
     await tester.pumpAndSettle();
     final comparisonPhotos = find.descendant(
-        of: find.byType(AlertDialog), matching: find.byType(Image));
+        of: find.byType(ScanCompareSheet), matching: find.byType(Image));
     await tester.runAsync(() async {
       await tester.tap(compare);
-      await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('Earlier Garment'));
       final deadline = DateTime.now().add(const Duration(seconds: 5));
       while (comparisonPhotos.evaluate().length != 2 &&
           DateTime.now().isBefore(deadline)) {
@@ -174,14 +161,11 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
     });
-    expect(find.text('Compare front photos'), findsOneWidget);
+    expect(find.text('Compare scans'), findsOneWidget);
     expect(comparisonPhotos, findsNWidgets(2));
-    await tester.tap(find.text('Close'));
+    Navigator.of(tester.element(find.byType(ScanCompareSheet))).pop();
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Laundry Suggestions'), 260,
-        scrollable: resultsScroller);
-    expect(find.text('Wash · Dry clean only'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Scientific Basis'), 260,
+    await tester.scrollUntilVisible(find.text('Sources and method'), 260,
         scrollable: resultsScroller);
     final why = find.text('Why this result?');
     await tester.ensureVisible(why);
