@@ -81,10 +81,12 @@ def main(require_database=False):
         assert len(body["per_image"]) == count
         assert body["methodology_version"]
         assert body["condition_assessment"]["category"]
-        assert body["health_score"] is None
-        assert body["estimated_remaining_months"] is None
-        assert body["lifespan"]["status"] == "insufficient_evidence"
+        assert body["health_score"] is None or 0 <= body["health_score"] <= 100
+        assert isinstance(body["estimated_remaining_months"], int)
+        assert body["lifespan"]["status"] == "experimental_estimate"
+        assert body["lifespan"]["remaining_months_low"] <= body["estimated_remaining_months"]
         assert body["six_month_outlook"]["status"] == "insufficient_evidence"
+        assert body["ai_care"]["laundry_mode"] and isinstance(body["ai_care"]["alerts"], list)
         assert body["projected_condition_after_6_months"] is None
         assert body["laundry_settings"]["max_temperature_c"] is None
         assert body["references"]

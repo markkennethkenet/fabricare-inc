@@ -238,6 +238,31 @@ class FabricMobileNetV2:
         }
 
 
+class FabricCNN(FabricMobileNetV2):
+    """A retrained CNN export described by its own model_info.json (V4 training notebook)."""
+
+    filename = "fabric_cnn.keras"
+
+    def __init__(self, directory):
+        info = read_model_info(directory)
+        self.name = info["name"]
+        self.validation_accuracy = info.get("validation_accuracy")
+        self.test_accuracy = info.get("test_accuracy")
+        self.test_macro_f1 = info.get("test_macro_f1")
+        super().__init__(directory)
+
+
+def read_model_info(directory):
+    """Name and test metrics of a CNN export, readable without loading TensorFlow."""
+    try:
+        info = json.loads((Path(directory) / "model_info.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"Cannot read model_info.json in {directory}.") from error
+    if not isinstance(info, dict) or not isinstance(info.get("name"), str) or not info["name"]:
+        raise RuntimeError("model_info.json must name the CNN.")
+    return info
+
+
 def extract_glcm72_features(image_source):
     rgb = prepare_fabric_rgb(image_source)
     gray = ImageOps.grayscale(rgb).resize((128, 128), Image.Resampling.BICUBIC)
@@ -261,6 +286,16 @@ class FabricGLCM72:
 
     def __init__(self, directory, model_type):
         self.name, filename, self.test_accuracy, self.test_macro_f1 = self.specifications[model_type]
+        self.model_type = model_type
+        # A retrained export ships metrics.json with its own held-out results.
+        metrics_path = directory / "metrics.json"
+        if metrics_path.is_file():
+            try:
+                measured = json.loads(metrics_path.read_text(encoding="utf-8")).get(model_type, {})
+            except (OSError, ValueError, AttributeError):
+                measured = {}
+            self.test_accuracy = measured.get("test_accuracy", self.test_accuracy)
+            self.test_macro_f1 = measured.get("test_macro_f1", self.test_macro_f1)
         path = directory / filename
         if not path.is_file():
             raise FileNotFoundError(f"Missing {self.name} model file: {filename}.")
@@ -287,7 +322,8 @@ class FabricGLCM72:
         result = fabric_prediction(self.labels, probabilities, self.name)
         return {**result, "fabric_type": label,
                 "confidence": result["probabilities"][label] * 100,
-                "score_kind": "uncalibrated_decision_tree_vote"}
+                "score_kind": "svm_platt_probability" if self.model_type == "svm"
+                else "uncalibrated_decision_tree_vote"}
 
 
 def fabric_prediction(labels, probabilities, model_name):

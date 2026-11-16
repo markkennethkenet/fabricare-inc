@@ -9,6 +9,7 @@ import os
 import platform
 from threading import Lock
 from time import monotonic
+from types import SimpleNamespace
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 import sklearn
@@ -24,10 +25,12 @@ from image_processing import quality_for, framing_hint, merge_detections, aggreg
 from auth_routes import auth_bp
 from database import init_schema, ping_database
 from model_runtime import (
-    FabricDecisionTree, FabricEnsemble, FabricGLCM72, FabricMobileNet,
-    FabricMobileNetV2, SIX_FABRIC_LABELS, load_fabric_model,
+    FabricCNN, FabricDecisionTree, FabricEnsemble, FabricGLCM72, FabricMobileNet,
+    FabricMobileNetV2, SIX_FABRIC_LABELS, extract_glcm72_features, load_fabric_model, read_model_info,
 )
 from model_analysis import model_result, validate_image_file
+import care_model
+from assessment import REFERENCES
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = CONFIG["input"]["maximum_upload_bytes"]
@@ -40,6 +43,20 @@ FABRIC_MODEL_PATH = BASE_DIR / "model" / "fabric_glcm_decision_tree.pkl"
 FABRIC_DECISION_TREE_PATH = BASE_DIR / "model" / "best_decision_tree.joblib"
 FABRIC_LABELS_PATH = BASE_DIR / "model" / "fabric_labels.json"
 DAMAGE_MODEL_PATH = BASE_DIR / "model" / "best.pt"
+# A retrained CNN export (V4 notebook) replaces the V3 MobileNetV2 when present.
+FABRIC_CNN_DIR = BASE_DIR / "model" / "fabric_cnn"
+LEGACY_CNN_DIR = BASE_DIR / "model" / "mobilenetv2_6class"
+CARE_MODEL_PATH = BASE_DIR / "model" / "care" / "care_recommender.joblib"
+
+
+def cnn_metadata():
+    """CNN name and metrics without loading TensorFlow."""
+    if (FABRIC_CNN_DIR / "model_info.json").is_file():
+        info = read_model_info(FABRIC_CNN_DIR)
+        return SimpleNamespace(name=info["name"], validation_accuracy=info.get("validation_accuracy"),
+                               test_accuracy=info.get("test_accuracy"), test_macro_f1=info.get("test_macro_f1"))
+    return FabricMobileNetV2
+
 
 fabric_backend = os.environ.get("FABRIC_CLASSIFIER", "mobilenet")
 if fabric_backend == "decision_tree":
@@ -47,9 +64,9 @@ if fabric_backend == "decision_tree":
     fabric_labels = fabric_model.labels
     fabric_model_name = fabric_model.name
 elif fabric_backend == "mobilenet":
-    fabric_model = FabricMobileNetV2  # Metadata is available without loading TensorFlow.
+    fabric_model = cnn_metadata()  # Metadata is available without loading TensorFlow.
     fabric_labels = list(SIX_FABRIC_LABELS)
-    fabric_model_name = FabricMobileNetV2.name
+    fabric_model_name = fabric_model.name
 elif fabric_backend == "mobilenet_legacy":
     fabric_model = FabricMobileNet(BASE_DIR / "model" / "mobilenet_20261110")
     fabric_labels = fabric_model.labels
@@ -84,7 +101,8 @@ def load_selected_classifier(model_type):
     with classifier_load_lock:
         if model_type not in classifier_cache:
             if model_type == "cnn":
-                model = FabricMobileNetV2(BASE_DIR / "model" / "mobilenetv2_6class")
+                model = (FabricCNN(FABRIC_CNN_DIR) if (FABRIC_CNN_DIR / "model_info.json").is_file()
+                         else FabricMobileNetV2(LEGACY_CNN_DIR))
             else:
                 model = FabricGLCM72(BASE_DIR / "model" / "glcm_models", model_type)
             classifier_cache[model_type] = model
@@ -106,7 +124,7 @@ def selected_classifier():
         raise SelectedClassifierError(str(error)) from None
     except Exception:
         app.logger.exception("Could not load fabric classifier %s", model_type)
-        name = (FabricMobileNetV2.name if model_type == "cnn"
+        name = (cnn_metadata().name if model_type == "cnn"
                 else FabricGLCM72.specifications[model_type][0])
         raise SelectedClassifierError(
             f"{name} could not load. Check the trained model files and API environment."
@@ -154,6 +172,67 @@ def second_fabric_opinion(records, primary_type, primary_label):
     else:
         status = "agrees" if label == primary_label else "disagrees"
     return {"status": status, "model": classifier.name, "fabric_type": label}
+
+
+care_model_lock = Lock()
+care_model_cache = {}
+
+
+def load_care_recommender():
+    """The trained care model (Decision Tree, Random Forest or SVM), or None to use the reference rules."""
+    with care_model_lock:
+        if "model" not in care_model_cache:
+            try:
+                care_model_cache["model"] = (care_model.CareRecommender(CARE_MODEL_PATH)
+                                             if CARE_MODEL_PATH.is_file() else None)
+            except Exception:
+                app.logger.exception("Could not load the care recommendation model")
+                care_model_cache["model"] = None
+        return care_model_cache["model"]
+
+
+def ai_care_for(records, fabric_type, detections, user_inputs):
+    """Laundry-mode suggestion and automated care alerts from the fabric, condition and image features."""
+    front = next((record for record in records if record["view"] == "front"), records[0])
+    try:
+        row = care_model.feature_row(
+            fabric_type, care_model.damage_features(detections), care_model.color_features(front["path"]),
+            care_model.glcm_summary(extract_glcm72_features(front["path"])[0]))
+    except Exception:
+        app.logger.exception("Care features could not be extracted")
+        return {"status": "unavailable"}
+    reference_mode, reasons = care_model.reference_laundry_mode(row)
+    recommender = load_care_recommender() if fabric_type in care_model.FABRICS else None
+    if recommender is not None:
+        prediction = recommender.predict(row)
+        status, model_name = "model_suggestion", recommender.name
+    else:
+        prediction = {"laundry_mode": reference_mode, "confidence": None, "probabilities": {}}
+        status, model_name = "rule_based_guidance", "Reference care rules"
+    mode = prediction["laundry_mode"]
+    label_entered = user_inputs["care_label"]["wash"] != "unknown"
+    return {
+        "status": status, "model": model_name, "laundry_mode": mode,
+        "label": care_model.LAUNDRY_MODES[mode], "detail": care_model.MODE_DETAILS[mode],
+        "confidence": prediction["confidence"], "probabilities": prediction["probabilities"],
+        "reference_mode": reference_mode, "agrees_with_reference": mode == reference_mode,
+        "reasons": [{"text": text, "reference_ids": refs} for text, refs in reasons],
+        "alerts": care_model.care_alerts(row),
+        "care_label_entered": label_entered,
+        "note": ("Your entered care label takes priority over this suggestion." if label_entered
+                 else "A suggestion from the scan. Check the garment's care label before washing."),
+        "features": {name: round(value, 4) for name, value in row.items() if not name.startswith("fabric_")},
+    }
+
+
+def with_care_references(references, ai_care):
+    """Add the sources cited by the care suggestion and alerts to the response references."""
+    cited = {ref for entry in [*ai_care.get("reasons", []), *ai_care.get("alerts", [])]
+             for ref in entry["reference_ids"]}
+    known = {entry["id"] for entry in references}
+    extra = [{"id": ref, "title": REFERENCES[ref][0], "url": REFERENCES[ref][1]}
+             for ref in sorted(cited - known) if ref in REFERENCES]
+    return [*references, *extra]
 
 
 def extract_glcm_features(image_path):
@@ -432,6 +511,8 @@ def analyze_upload(*, hybrid):
                 detector_available=detector_available, quality_limited=failed_quality,
                 coverage_limited=not all(record["damage_available"] for record in records),
             )
+            ai_care = ai_care_for(records, fabric["fabric_type"], merged, user_inputs)
+            assessment["references"] = with_care_references(assessment["references"], ai_care)
             metadata = scan_model_metadata(model_type, model)
             analysis = model_result(
                 {"fabric_type": fabric["fabric_type"], "confidence": fabric["fabric_confidence"],
@@ -442,6 +523,7 @@ def analyze_upload(*, hybrid):
             return jsonify({
                 "schema_version": 3, **fabric, "damages": merged, **metadata, **analysis, **assessment,
                 **({"fabric_second_opinion": opinion} if opinion is not None else {}),
+                "ai_care": ai_care,
                 "per_image": [public_image(record) for record in records], "quality_override": failed_quality,
                 "model_versions": {"fabric": metadata["fabric_model"],
                                    "damage": DAMAGE_MODEL_PATH.name if detector_available else None},

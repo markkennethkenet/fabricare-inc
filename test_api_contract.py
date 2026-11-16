@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import cv2
 import numpy as np
+import care_model
 from model_runtime import FabricDecisionTree
 
 class ApiContractTests(unittest.TestCase):
@@ -81,8 +82,17 @@ class ApiContractTests(unittest.TestCase):
                 self.assertEqual(list(self.api.classifier_cache[model_type].labels),
                                  ['cotton', 'denim', 'linen', 'polyester', 'silk', 'wool'])
                 self.assertIn(body['fabric_type'], self.api.classifier_cache[model_type].labels)
-                self.assertIsNone(body['health_score'])
-                self.assertIsNone(body['estimated_remaining_months'])
+                self.assertTrue(0 <= body['health_score'] <= 100)
+                self.assertIn(body['health_grade'], {'Excellent', 'Good', 'Fair', 'Poor'})
+                self.assertIsInstance(body['estimated_remaining_months'], int)
+                self.assertEqual(body['lifespan']['status'], 'experimental_estimate')
+                care = body['ai_care']
+                self.assertIn(care['status'], {'model_suggestion', 'rule_based_guidance'})
+                self.assertIn(care['laundry_mode'], care_model.CLASSES)
+                self.assertTrue(care['label'] and care['reasons'])
+                self.assertIsInstance(care['alerts'], list)
+                cited = {ref for entry in care['reasons'] + care['alerts'] for ref in entry['reference_ids']}
+                self.assertTrue(cited <= {ref['id'] for ref in body['references']})
                 self.assertEqual(body['schema_version'], 3)
                 self.assertIn('care_recommendation', body)
                 if model_type == 'svm':
@@ -195,7 +205,7 @@ class ApiContractTests(unittest.TestCase):
         data['findings'][1]['confirmed'] = False
         response = self.client.post('/review-damage', json=data)
         self.assertEqual(response.get_json()["condition_assessment"]["observations"], [])
-        self.assertIsNone(response.get_json()["health_score"])
+        self.assertEqual(response.get_json()["health_score"], 100)
         data['findings'][1]['confirmed'] = 'yes'
         self.assertEqual(self.client.post('/review-damage', json=data).status_code, 400)
 
@@ -294,7 +304,9 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(result["fabric_type"], "future_fabric")
         self.assertEqual(result["condition_assessment"]["category"], "Damage assessment unavailable")
         self.assertEqual(result["damages"], [])
-        self.assertIsNone(result["estimated_remaining_months"])
+        self.assertIsNone(result["health_score"])  # no detector, no visible-condition score
+        self.assertIsInstance(result["estimated_remaining_months"], int)
+        self.assertEqual(result["ai_care"]["status"], "rule_based_guidance")  # unknown fabric uses the rules
 
     def test_label_restrictions_survive_upload_and_review(self):
         label = {"wash": "professional_only", "dry": "do_not_tumble"}

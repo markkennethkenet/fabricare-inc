@@ -1,15 +1,41 @@
 """Versioned condition and care rules for the scan and damage-review endpoints."""
 import json
+import math
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
 from model_analysis import confidence_threshold
 
 CONFIG = json.loads((Path(__file__).parent / "assessment_config.json").read_text(encoding="utf-8"))
-METHOD_VERSION = "visible-condition-and-label-care/1.2"
+METHOD_VERSION = "visible-condition-and-label-care/2.0"
 INSUFFICIENT = "insufficient_evidence"
 GUIDANCE = "rule_based_guidance"
+ESTIMATE = "experimental_estimate"
 LIFESPAN_MESSAGE = "Insufficient evidence for a reliable remaining lifespan estimate."
+
+# Garment lifespan figures from Laitala and Klepp (2020), reference D, section 4.1 (46,857 garments, five countries).
+# The mean current garment age was 2.6 years, giving an expected total lifespan of about 5.2 years. In the regression,
+# cotton is the reference; silk lasts 2.2 years longer, wool 1.2 years, synthetics 5.5 months and regenerated
+# cellulose 9.7 months. The cotton level follows from the 5.2-year mean and the fibre mix (wool 16.8%,
+# synthetics 14.5%, regenerated cellulose 2.9%) reported in the same study.
+SURVEY_TOTAL_YEARS = 5.2
+SURVEY_CURRENT_AGE_YEARS = 2.6
+COTTON_TOTAL_YEARS = SURVEY_TOTAL_YEARS - (0.168 * 1.2 + 0.145 * 5.5 / 12 + 0.029 * 9.7 / 12)
+FIBRE_OFFSET_YEARS = {"cotton": 0.0, "denim": 0.0, "linen": 0.0, "polyester": 5.5 / 12, "silk": 2.2, "wool": 1.2}
+# Ten more wears per year shortened lifespan by about two months; washing less often than every 30 wears added up
+# to 4.8 years compared with washing after every wear (section 4.1).
+WEARS_PER_YEAR = {"rarely": 12, "weekly": 52, "several_times_a_week": 156, "daily": 312}
+WASHES_PER_WEEK = {"rarely": 1 / 12, "monthly": 0.25, "weekly": 1.0, "multiple_per_week": 3.0}
+REFERENCE_WEARS_PER_YEAR = 52
+REFERENCE_WEARS_PER_WASH = 3
+# The study's model explains about 22% of the variation in lifespan, so estimates are shown as a wide range.
+RANGE_LOW, RANGE_HIGH = 0.6, 1.4
+# FabriCare assumptions, not study figures: how visible damage shortens the remaining estimate.
+DAMAGE_LIFESPAN_FACTOR = {"hole": (0.75, None), "pilling": (0.9, 0.8), "stain": (0.95, 0.9), "needlemark": (0.98, 0.95)}
+CONFIRMED_HOLE_MAX_MONTHS = 6
+# FabriCare visible-condition health score: points removed per finding type (candidate, confirmed).
+HEALTH_DEDUCTIONS = {"hole": (20, 40), "pilling": (10, 20), "stain": (8, 15), "needlemark": (5, 10)}
+HEALTH_GRADES = ((85, "Excellent"), (70, "Good"), (50, "Fair"), (0, "Poor"))
 
 REFERENCES = {
     "A": ("ISO 15487:2018 · Appearance after washing and drying", "https://www.iso.org/standard/67602.html"),
@@ -348,7 +374,92 @@ def care_for(fabric_type, fabric_confidence, inputs, condition):
     return [*advice, *general], laundry, risks, needs_confirmation
 
 
-def durability_and_outlook(condition, inputs):
+def health_assessment(condition):
+    """Score the visible condition from 0 to 100 using the damage findings.
+
+    Each finding type removes points once; confirmed findings count fully and candidates count about half.
+    Findings covering under 2% of the photo remove 70% of the points. The weights are FabriCare assumptions.
+    """
+    if not condition["detector_available"] and not condition["observations"]:
+        return None
+    deductions = []
+    for kind, (candidate_points, confirmed_points) in HEALTH_DEDUCTIONS.items():
+        items = [item for item in condition["observations"] if item["type"] == kind]
+        if not items:
+            continue
+        confirmed = any(item["confirmed"] for item in items)
+        area = max((item.get("area_ratio") or 0) for item in items)
+        points = (confirmed_points if confirmed else candidate_points) * (1.0 if area >= 0.02 else 0.7)
+        deductions.append({"type": kind, "points": round(points, 1),
+                           "provenance": "user_reported" if confirmed else "model_predicted"})
+    score = max(0, round(100 - sum(d["points"] for d in deductions)))
+    grade = next(name for floor, name in HEALTH_GRADES if score >= floor)
+    return {"score": score, "grade": grade, "deductions": deductions}
+
+
+def lifespan_estimate(fabric_type, condition, inputs, today=None):
+    """Referenced remaining-lifespan estimate in months, shown as a range.
+
+    Baselines and use effects come from Laitala and Klepp (2020); damage effects are FabriCare assumptions.
+    """
+    today = today or assessment_today()
+    fabric = str(fabric_type).casefold()
+    known_fabric = fabric in FIBRE_OFFSET_YEARS
+    total = COTTON_TOTAL_YEARS + FIBRE_OFFSET_YEARS[fabric] if known_fabric else SURVEY_TOTAL_YEARS
+    factors = [{"factor": f"Typical total lifespan for {fabric}" if known_fabric else "Typical total lifespan (fabric unconfirmed)",
+                "effect_months": round(total * 12), "source": "D"}]
+    wears = WEARS_PER_YEAR.get(inputs["use_frequency"])
+    if wears is not None:
+        months = max(-24.0, min(12.0, -2.0 * (wears - REFERENCE_WEARS_PER_YEAR) / 10))
+        total += months / 12
+        factors.append({"factor": f"Wear frequency: {inputs['use_frequency'].replace('_', ' ')}",
+                        "effect_months": round(months), "source": "D"})
+    washes = WASHES_PER_WEEK.get(inputs["washing_frequency"])
+    if wears is not None and washes is not None:
+        per_wash = max(1.0, (wears / 52) / washes)
+
+        def washing_benefit(value):
+            return 4.8 * math.log(min(value, 30)) / math.log(30)
+
+        years = max(-2.0, min(2.0, washing_benefit(per_wash) - washing_benefit(REFERENCE_WEARS_PER_WASH)))
+        total += years
+        factors.append({"factor": f"About {per_wash:.0f} wear(s) between washes", "effect_months": round(years * 12),
+                        "source": "D"})
+    if inputs["purchase_date"]:
+        age = max(0.0, (today - date.fromisoformat(inputs["purchase_date"])).days / 365.25)
+        factors.append({"factor": f"Garment age: {age:.1f} years (purchase date)", "effect_months": -round(age * 12),
+                        "source": "user"})
+    elif inputs["condition"] == "new":
+        age = 0.0
+        factors.append({"factor": "Garment reported as new", "effect_months": 0, "source": "user"})
+    else:
+        age = SURVEY_CURRENT_AGE_YEARS
+        factors.append({"factor": "Age unknown: average current garment age assumed", "effect_months": -round(age * 12),
+                        "source": "D"})
+    remaining = max(0.0, total - age) * 12
+    confirmed = {item["type"] for item in condition["observations"] if item["confirmed"]}
+    pending = {item["type"] for item in condition["observations"] if not item["confirmed"]}
+    for kind, (candidate_factor, confirmed_factor) in DAMAGE_LIFESPAN_FACTOR.items():
+        if kind in confirmed and confirmed_factor is not None:
+            factor = confirmed_factor
+        elif kind in pending or kind in confirmed:
+            factor = candidate_factor
+        else:
+            continue
+        before = remaining
+        remaining *= factor
+        factors.append({"factor": f"{'Confirmed' if kind in confirmed else 'Possible'} {kind}",
+                        "effect_months": -round(before - remaining), "source": "fabricare_assumption"})
+    if "hole" in confirmed and remaining > CONFIRMED_HOLE_MAX_MONTHS:
+        factors.append({"factor": "Confirmed opening: repair suggested before further wear",
+                        "effect_months": -round(remaining - CONFIRMED_HOLE_MAX_MONTHS), "source": "fabricare_assumption"})
+        remaining = CONFIRMED_HOLE_MAX_MONTHS
+    central = round(remaining)
+    return {"central": central, "low": round(remaining * RANGE_LOW), "high": round(remaining * RANGE_HIGH),
+            "factors": factors}
+
+
+def durability_and_outlook(condition, inputs, fabric_type="uncertain", today=None):
     confirmed = {item["type"] for item in condition["observations"] if item["confirmed"]}
     pending = any(not item["confirmed"] for item in condition["observations"])
     if "hole" in confirmed:
@@ -390,11 +501,16 @@ def durability_and_outlook(condition, inputs):
         refs.append("G")
     if not concerns:
         concerns.append("Use the same lighting and framing when you rescan. Compare seams, frequently rubbed areas and any marked spots.")
+    estimate = lifespan_estimate(fabric_type, condition, inputs, today)
     lifespan = section(
-        INSUFFICIENT, "qualitative_assessment",
-        "Reliable remaining months require observed end-of-use outcomes and a validated model. Wear, washing and repair "
-        "records help interpret repeat photos. The photo describes visible condition only.",
-        ["C", "D", "I"] + (["L"] if "hole" in confirmed else []), remaining_months=None, summary=summary,
+        ESTIMATE, "reference_estimate",
+        "An estimate, not a prediction for this garment. It starts from typical garment lifespans in a five-country "
+        "wardrobe survey (Laitala and Klepp, 2020), adjusts for fibre, wear and washing frequency, subtracts the "
+        "garment's age and reduces the result for visible damage. That survey's model explains about a fifth of the "
+        "variation between garments, so the range is wide. Damage adjustments are FabriCare assumptions.",
+        ["C", "D", "I"] + (["L"] if "hole" in confirmed else []),
+        remaining_months=estimate["central"], remaining_months_low=estimate["low"],
+        remaining_months_high=estimate["high"], factors=estimate["factors"], summary=summary,
     )
     outlook = section(
         INSUFFICIENT, "qualitative_scenario",
@@ -413,7 +529,8 @@ def assess(fabric_type, detections, user_inputs=None, today=None, *, fabric_conf
     inputs = normalize_user_inputs(user_inputs, today=today)
     condition = condition_for(detections, detector_available, reviewed, quality_limited, coverage_limited)
     advice, laundry, risks, needs_confirmation = care_for(fabric_type, fabric_confidence, inputs, condition)
-    lifespan, outlook = durability_and_outlook(condition, inputs)
+    lifespan, outlook = durability_and_outlook(condition, inputs, fabric_type, today)
+    health = health_assessment(condition)
     usage = [f"{name}: {inputs[field].replace('_', ' ')}"
              for field, name in (("condition", "Garment"), ("use_frequency", "Wear frequency"),
                                  ("washing_frequency", "Wash frequency")) if inputs[field] != "unspecified"]
@@ -433,9 +550,14 @@ def assess(fabric_type, detections, user_inputs=None, today=None, *, fabric_conf
         "risk_alerts": risks,
         "references": [{"id": ref, "title": REFERENCES[ref][0], "url": REFERENCES[ref][1]} for ref in ref_ids],
         "user_inputs": inputs, "usage_status": usage_status,
-        "health_score": None, "condition_rating": condition["category"],
-        "estimated_lifespan": LIFESPAN_MESSAGE, "estimated_remaining_months": None,
-        "estimate_method": INSUFFICIENT, "projected_condition_after_6_months": None,
+        "health_assessment": health,
+        "health_score": health["score"] if health else None,
+        "health_grade": health["grade"] if health else None,
+        "condition_rating": condition["category"],
+        "estimated_lifespan": (f"About {lifespan['remaining_months_low']}–{lifespan['remaining_months_high']} "
+                               "months remaining (estimate)"),
+        "estimated_remaining_months": lifespan["remaining_months"],
+        "estimate_method": "reference_estimate", "projected_condition_after_6_months": None,
         "care_recommendations": [entry["action"] for entry in advice],
         "care_recommendation": {**laundry, "care_advice": " ".join(entry["action"] for entry in advice)},
     }

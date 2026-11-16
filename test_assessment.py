@@ -1,19 +1,59 @@
 import unittest
 from datetime import date
 
-from assessment import LIFESPAN_MESSAGE, assess, normalize_user_inputs
+from assessment import assess, normalize_user_inputs
 
 
 class AssessmentTests(unittest.TestCase):
-    def test_clear_photo_does_not_imply_health_or_service_life(self):
-        result = assess("cotton", [], fabric_confidence=93)
+    def test_clear_photo_gets_full_health_and_a_referenced_lifespan_range(self):
+        result = assess("cotton", [], fabric_confidence=93, today=date(2026, 11, 16))
         self.assertIn("No supported findings flagged", result["condition_rating"])
-        self.assertIsNone(result["health_score"])
-        self.assertIsNone(result["estimated_remaining_months"])
-        self.assertEqual(result["estimated_lifespan"], LIFESPAN_MESSAGE)
-        self.assertEqual(result["lifespan"]["status"], "insufficient_evidence")
+        self.assertEqual(result["health_score"], 100)
+        self.assertEqual(result["health_grade"], "Excellent")
+        lifespan = result["lifespan"]
+        self.assertEqual(lifespan["status"], "experimental_estimate")
+        self.assertEqual(lifespan["provenance"], "reference_estimate")
+        self.assertIn("D", lifespan["reference_ids"])
+        self.assertLess(lifespan["remaining_months_low"], lifespan["remaining_months"])
+        self.assertLess(lifespan["remaining_months"], lifespan["remaining_months_high"])
+        self.assertEqual(result["estimated_remaining_months"], lifespan["remaining_months"])
+        self.assertIn("months remaining (estimate)", result["estimated_lifespan"])
+        self.assertTrue(any(f["source"] == "D" for f in lifespan["factors"]))
         self.assertEqual(result["six_month_outlook"]["provenance"], "qualitative_scenario")
         self.assertIsNone(result["projected_condition_after_6_months"])
+
+    def test_lifespan_follows_the_survey_figures(self):
+        from assessment import COTTON_TOTAL_YEARS, SURVEY_CURRENT_AGE_YEARS
+
+        today = date(2026, 11, 16)
+        unknown = assess("cotton", [], today=today)["lifespan"]
+        # Age unknown: the survey's average current garment age is subtracted.
+        self.assertEqual(unknown["remaining_months"], round((COTTON_TOTAL_YEARS - SURVEY_CURRENT_AGE_YEARS) * 12))
+        new_silk = assess("silk", [], {"condition": "new"}, today=today)["lifespan"]
+        new_cotton = assess("cotton", [], {"condition": "new"}, today=today)["lifespan"]
+        self.assertEqual(new_silk["remaining_months"] - new_cotton["remaining_months"], round(2.2 * 12))
+        worn_daily = assess("cotton", [], {"condition": "new", "use_frequency": "daily",
+                                           "washing_frequency": "weekly"}, today=today)["lifespan"]
+        worn_weekly = assess("cotton", [], {"condition": "new", "use_frequency": "weekly",
+                                            "washing_frequency": "weekly"}, today=today)["lifespan"]
+        self.assertNotEqual(worn_daily["remaining_months"], worn_weekly["remaining_months"])
+        dated = assess("cotton", [], {"purchase_date": "2024-11-16"}, today=today)["lifespan"]
+        self.assertEqual(new_cotton["remaining_months"] - dated["remaining_months"], 24)
+
+    def test_damage_lowers_health_and_caps_lifespan_after_a_confirmed_opening(self):
+        today = date(2026, 11, 16)
+        hole = [{"type": "hole", "confidence": 90, "area_ratio": 0.03}]
+        candidate = assess("wool", hole, {"condition": "new"}, today=today)
+        confirmed = assess("wool", hole, {"condition": "new"}, today=today, reviewed=True)
+        self.assertEqual(candidate["health_score"], 80)
+        self.assertEqual(confirmed["health_score"], 60)
+        self.assertEqual(confirmed["health_grade"], "Fair")
+        self.assertEqual(confirmed["lifespan"]["remaining_months"], 6)
+        self.assertTrue(any(f["source"] == "fabricare_assumption" for f in confirmed["lifespan"]["factors"]))
+        small = assess("cotton", [{"type": "stain", "confidence": 70, "area_ratio": 0.005}], today=today)
+        self.assertEqual(small["health_score"], round(100 - 8 * 0.7))
+        unavailable = assess("cotton", [], detector_available=False, today=today)
+        self.assertIsNone(unavailable["health_score"])
 
     def test_only_supported_candidates_and_reviewed_observations(self):
         findings = [{"type": name, "area_ratio": .12, "confidence": 95}
@@ -37,11 +77,11 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(condition["status"], "insufficient_evidence")
         self.assertEqual(condition["category"], "Damage assessment unavailable")
 
-    def test_history_qualifies_scenario_without_predicting(self):
+    def test_history_qualifies_scenario_and_lifespan(self):
         result = assess("cotton", [], {"washing_frequency": "multiple_per_week", "previous_repairs": "Hem"})
         self.assertIn("wash frequency is multiple per week", result["six_month_outlook"]["assumptions"])
         self.assertEqual(result["user_inputs"]["previous_repairs"], "Hem")
-        self.assertIsNone(result["estimated_remaining_months"])
+        self.assertIsInstance(result["estimated_remaining_months"], int)
 
     def test_professional_only_overrides_fabric_and_ancillary_settings(self):
         for fabric in ("cotton", "denim", "linen", "polyester", "silk", "wool"):
@@ -100,8 +140,8 @@ class AssessmentTests(unittest.TestCase):
         self.assertTrue(any(row["action"].startswith("Avoid strong stain") for row in advice))
         self.assertTrue(any(row["action"].startswith("If this garment is cotton") for row in advice))
         self.assertFalse(result["laundry_settings"]["confirmed_settings"])
-        self.assertIsNone(result["health_score"])
-        self.assertIsNone(result["estimated_remaining_months"])
+        self.assertEqual(result["health_score"], round(100 - 8 * 0.7))
+        self.assertIsInstance(result["estimated_remaining_months"], int)
 
     def test_scenario_b_reviewed_pilling_and_wool_label_limits(self):
         result = assess("wool", [{"type": "pilling", "view": "back"}], {
@@ -123,9 +163,9 @@ class AssessmentTests(unittest.TestCase):
         self.assertTrue(result["fabric_needs_confirmation"])
         self.assertIn("check seams", result["lifespan"]["summary"].lower())
         self.assertTrue(result["laundry_settings"]["general_guidance"])
-        self.assertIsNone(result["health_score"])
+        self.assertEqual(result["health_score"], 100)
         self.assertIsNone(result["laundry_settings"]["max_temperature_c"])
-        self.assertIsNone(result["estimated_remaining_months"])
+        self.assertTrue(any("fabric unconfirmed" in f["factor"] for f in result["lifespan"]["factors"]))
 
     def test_missing_label_offers_conditional_cotton_guidance(self):
         result = assess("cotton", [], {"care_label": {"wash": "unknown"}}, fabric_confidence=95)
