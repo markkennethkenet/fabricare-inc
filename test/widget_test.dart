@@ -280,6 +280,42 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('result offers the back and close-up to scan the whole garment',
+      (tester) async {
+    ScanResult scan(List<String> views) => ScanResult(
+          id: '9',
+          userId: '1',
+          garmentName: 'denim Garment',
+          images: [
+            for (final view in views)
+              ScanImage(view: view, path: 'missing/$view.jpg')
+          ],
+          dateScanned: DateTime(2026, 11, 17),
+          analysis: const {'fabric_type': 'denim', 'fabric_confidence': 80},
+        );
+    await tester.pumpWidget(
+        MaterialApp(home: ScanResultScreen(result: scan(['front']))));
+    expect(find.text('Scan the whole garment'), findsOneWidget);
+    expect(find.text('Add the back and a close-up for a steadier result.'),
+        findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Back'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Close-up'), findsOneWidget);
+
+    await tester.pumpWidget(MaterialApp(
+        key: const ValueKey('front-back'),
+        home: ScanResultScreen(result: scan(['front', 'back']))));
+    expect(find.widgetWithText(OutlinedButton, 'Back'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Close-up'), findsOneWidget);
+    expect(find.text('Add a close-up of the main fabric for a steadier result.'),
+        findsOneWidget);
+
+    await tester.pumpWidget(MaterialApp(
+        key: const ValueKey('all-views'),
+        home: ScanResultScreen(result: scan(['front', 'back', 'close_up']))));
+    expect(find.text('Scan the whole garment'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('shows a candidate and its care precaution at 62.5 percent',
       (tester) async {
     final result = ScanResult(

@@ -106,6 +106,30 @@ class AppData extends ChangeNotifier {
     return result;
   }
 
+  /// Replaces a saved scan's photos and analysis after more views were added,
+  /// keeping its ID, date and notes. Damage reviews start over because the
+  /// findings come from the new analysis.
+  Future<ScanResult> replaceAnalysis(ScanResult scan, List<ScanImage> images,
+      AnalyzeResponse response) async {
+    final store = _store;
+    if (store == null || _userId != scan.userId) {
+      throw StateError('Sign in to the scan account to update this scan.');
+    }
+    final saved = await store.replace(ScanResult(
+      id: scan.id,
+      userId: scan.userId,
+      garmentName: '${response.fabricType} Garment',
+      images: images,
+      dateScanned: scan.dateScanned,
+      analysis: response.json,
+      userInputs: Map<String, dynamic>.from(
+          response.json['user_inputs'] as Map? ?? scan.userInputs),
+      notes: scan.notes,
+    ));
+    notifyListeners();
+    return saved;
+  }
+
   void updateProfile(
       {String? fullName, String? email, String? phone, String? location}) {
     if (fullName != null) profile.fullName = fullName;

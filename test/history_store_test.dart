@@ -69,4 +69,44 @@ void main() {
     await reopened.close();
     await directory.delete(recursive: true);
   });
+
+  test('replacing a scan keeps its saved photo and copies only the new view',
+      () async {
+    final directory =
+        await Directory.systemTemp.createTemp('fabricare_replace_test');
+    final front = File('${directory.path}/front.jpg');
+    final back = File('${directory.path}/back.jpg');
+    await front.writeAsBytes([1, 2, 3]);
+    await back.writeAsBytes([4, 5, 6]);
+    final store = HistoryStore(Directory('${directory.path}/store'));
+    await store.open();
+    final saved = await store.add(ScanResult(
+        id: '5',
+        userId: '10',
+        garmentName: 'denim Garment',
+        images: [ScanImage(view: 'front', path: front.path)],
+        dateScanned: DateTime(2026, 11, 17),
+        analysis: const {'fabric_type': 'denim'}));
+    final updated = await store.replace(ScanResult(
+        id: saved.id,
+        userId: saved.userId,
+        garmentName: 'denim Garment',
+        images: [
+          saved.images.single,
+          ScanImage(view: 'back', path: back.path),
+        ],
+        dateScanned: saved.dateScanned,
+        analysis: const {'fabric_type': 'denim', 'fabric_confidence': 80}));
+    expect(updated.images.first.path, saved.images.single.path);
+    expect(await File(updated.images.first.path).readAsBytes(), [1, 2, 3]);
+    expect(updated.images.last.view, 'back');
+    expect(updated.images.last.path, isNot(back.path));
+    expect(await File(updated.images.last.path).readAsBytes(), [4, 5, 6]);
+    final scans = store.forUser('10');
+    expect(scans.length, 1); // the same scan, not a second one
+    expect(scans.single.images.length, 2);
+    expect(scans.single.analysis['fabric_confidence'], 80);
+    await store.close();
+    await directory.delete(recursive: true);
+  });
 }

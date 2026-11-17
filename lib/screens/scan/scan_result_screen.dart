@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/mock_data.dart';
@@ -13,6 +14,7 @@ import '../../widgets/fabric_result_hero.dart';
 import '../../widgets/scan_compare_sheet.dart';
 import '../../widgets/section_card.dart';
 import 'scan_screen.dart';
+import 'smart_capture_screen.dart';
 
 /// Displays assessment supplied by the backend; no local scoring rules.
 class ScanResultScreen extends StatefulWidget {
@@ -25,8 +27,188 @@ class ScanResultScreen extends StatefulWidget {
 
 class _ScanResultScreenState extends State<ScanResultScreen> {
   late ScanResult result = widget.result;
-  late final Map<String, bool> _decisions = result.damageReview;
+  late Map<String, bool> _decisions = result.damageReview;
   bool _saving = false;
+  String? _addingView;
+
+  static const _views = ['front', 'back', 'close_up'];
+  static String _viewName(String view) => switch (view) {
+        'back' => 'Back',
+        'close_up' => 'Close-up',
+        _ => 'Front',
+      };
+
+  /// Adds the back or a close-up, then re-analyzes all views together.
+  Future<void> _addView(String view) async {
+    if (_addingView != null || _saving) return;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.surface,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take a photo'),
+              subtitle: Text(view == 'back'
+                  ? 'Lay the garment face down, flat'
+                  : 'Fill the box with the main fabric'),
+              onTap: () => Navigator.pop(sheet, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.pop(sheet, ImageSource.gallery),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    final String? path;
+    if (source == ImageSource.camera) {
+      final photo = await Navigator.of(context).push<CapturedPhoto>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => SmartCaptureScreen(
+              view: view, step: _views.indexOf(view) + 1, totalSteps: 3),
+        ),
+      );
+      path = photo?.path;
+    } else {
+      final photo = await ImagePicker().pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 85,
+          maxWidth: 1920,
+          maxHeight: 1920);
+      path = photo?.path;
+    }
+    if (path == null || !mounted) return;
+    await _rescan(ScanImage(view: view, path: path));
+  }
+
+  Future<void> _rescan(ScanImage added) async {
+    setState(() => _addingView = added.view);
+    final images = [
+      ...result.images.where((image) => image.view != added.view),
+      added,
+    ]..sort((a, b) => _views.indexOf(a.view).compareTo(_views.indexOf(b.view)));
+    try {
+      final api = FabricCareApiService.instance;
+      final quality = await api.checkQuality(images);
+      final failures = quality
+          .where((check) => (check['quality'] as Map)['passed'] != true)
+          .toList();
+      var allowLowQuality = false;
+      if (failures.isNotEmpty) {
+        if (!mounted) return;
+        allowLowQuality = await showDialog<bool>(
+              context: context,
+              builder: (dialog) => AlertDialog(
+                icon: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Review photo quality'),
+                content: Text(failures
+                    .map((check) =>
+                        '${_viewName(check['view'] as String)}: ${(check['quality'] as Map)['reason']}')
+                    .join('\n\n')),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialog, false),
+                      child: const Text('Retake')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialog, true),
+                      child: const Text('Continue anyway')),
+                ],
+              ),
+            ) ??
+            false;
+        if (!allowLowQuality) return;
+      }
+      final response = await api.analyzeImages(images,
+          allowLowQuality: allowLowQuality,
+          modelType: result.analysis['model_type'] as String?,
+          userInputs: result.userInputs);
+      final saved =
+          await AppData.instance.replaceAnalysis(result, images, response);
+      if (!mounted) return;
+      setState(() {
+        result = saved;
+        _decisions = saved.damageReview;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text('${_viewName(added.view)} photo added. Result updated.')));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not update the scan. $error')));
+      }
+    } finally {
+      if (mounted) setState(() => _addingView = null);
+    }
+  }
+
+  Widget _wholeGarmentCard() {
+    bool has(String view) => result.images.any((image) => image.view == view);
+    const extra = ['back', 'close_up'];
+    if (!has('front') || extra.every(has)) return const SizedBox.shrink();
+    final adding = _addingView;
+    final missing = extra.where((view) => !has(view)).toList();
+    return SectionCard(
+      title: 'Scan the whole garment',
+      icon: Icons.checkroom_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            adding != null
+                ? 'Adding the ${_viewName(adding).toLowerCase()} and updating the result…'
+                : missing.length == 2
+                    ? 'Add the back and a close-up for a steadier result.'
+                    : missing.first == 'back'
+                        ? 'Add the back for a steadier result.'
+                        : 'Add a close-up of the main fabric for a steadier result.',
+            style: const TextStyle(color: AppColors.inkSoft),
+          ),
+          if (adding != null)
+            const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: LinearProgressIndicator(),
+            ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (final (index, view) in extra.indexed) ...[
+                if (index > 0) const SizedBox(width: 10),
+                Expanded(
+                  child: has(view)
+                      ? FilledButton.tonalIcon(
+                          onPressed: null,
+                          icon: const Icon(Icons.check_rounded, size: 18),
+                          label: Text(_viewName(view)),
+                        )
+                      : OutlinedButton.icon(
+                          onPressed: adding == null && !_saving
+                              ? () => _addView(view)
+                              : null,
+                          icon: Icon(
+                              view == 'back'
+                                  ? Icons.flip_camera_android_outlined
+                                  : Icons.zoom_in_rounded,
+                              size: 20),
+                          label: Text(_viewName(view)),
+                        ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   void _viewFinding(DamageItem item) {
     showDialog<void>(
@@ -300,6 +482,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
               threshold:
                   (fabric['threshold_percent'] as num?)?.toDouble() ?? 85,
             ),
+            _wholeGarmentCard(),
             _careCards(),
             SectionCard(
               title: 'Fabric condition',

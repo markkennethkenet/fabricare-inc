@@ -69,6 +69,48 @@ class HistoryStore {
     }
   }
 
+  /// Saves a changed scan under its existing ID, for example after another
+  /// view was added. Photos already in the scan's media folder stay as they
+  /// are; only new photos are copied in (or embedded, on the web).
+  Future<ScanResult> replace(ScanResult scan) async {
+    if (_inBrowser) {
+      final images = [
+        for (final source in scan.images)
+          ScanImage(view: source.view, path: await _dataUrl(source)),
+      ];
+      final saved = scan.withImages(images);
+      await put(saved);
+      return saved;
+    }
+    final directory =
+        Directory(p.join(root!.path, 'scan_media', scan.userId, scan.id));
+    await directory.create(recursive: true);
+    final media = p.normalize(p.absolute(directory.path));
+    final copied = <File>[];
+    try {
+      final images = <ScanImage>[];
+      for (final source in scan.images) {
+        if (p.isWithin(media, p.normalize(p.absolute(source.path)))) {
+          images.add(source);
+          continue;
+        }
+        final target = p.join(directory.path,
+            '${source.view}_${DateTime.now().microsecondsSinceEpoch}${p.extension(source.path)}');
+        await source.file.copy(target);
+        copied.add(File(target));
+        images.add(ScanImage(view: source.view, path: target));
+      }
+      final saved = scan.withImages(images);
+      await put(saved);
+      return saved;
+    } catch (_) {
+      for (final file in copied) {
+        if (await file.exists()) await file.delete();
+      }
+      rethrow;
+    }
+  }
+
   /// Blob URLs expire with the browser session, so embed the photo itself.
   static Future<String> _dataUrl(ScanImage image) async {
     if (image.path.startsWith('data:')) return image.path;
