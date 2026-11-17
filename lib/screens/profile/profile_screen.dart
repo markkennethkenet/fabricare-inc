@@ -72,8 +72,11 @@ class ProfileScreen extends StatelessWidget {
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
-                                    const Text('Signed in with Google',
-                                        style: TextStyle(
+                                    Text(
+                                        AuthService.instance.signedInWithGoogle
+                                            ? 'Signed in with Google'
+                                            : 'Signed in with email',
+                                        style: const TextStyle(
                                             color: Color(0xFFD7E2D4),
                                             fontSize: 12.5)),
                                   ],

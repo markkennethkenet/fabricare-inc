@@ -19,6 +19,7 @@ class AuthService extends ChangeNotifier {
   static final AuthService instance = AuthService._();
 
   static const _photoKey = 'fabricare_google_photo';
+  static const _methodKey = 'fabricare_sign_in_method';
 
   User? _currentUser;
   User? get currentUser => _currentUser;
@@ -28,18 +29,53 @@ class AuthService extends ChangeNotifier {
   String? _photoUrl;
   String? get photoUrl => _photoUrl;
 
+  /// How this device signed in: 'google' or 'email'.
+  String? _signInMethod;
+  bool get signedInWithGoogle => _signInMethod != 'email';
+
   Future<void> init() async {
     await AuthApiService.instance.loadStoredToken();
     try {
       _currentUser = await AuthApiService.instance.fetchCurrentUser();
       if (_currentUser != null) {
-        _photoUrl = (await SharedPreferences.getInstance()).getString(_photoKey);
+        final prefs = await SharedPreferences.getInstance();
+        _photoUrl = prefs.getString(_photoKey);
+        _signInMethod = prefs.getString(_methodKey);
       }
     } catch (e) {
       debugPrint('Auth restore failed: $e');
       _currentUser = null;
     }
     notifyListeners();
+  }
+
+  Future<User> login({required String email, required String password}) =>
+      _emailSession(() =>
+          AuthApiService.instance.login(email: email, password: password));
+
+  Future<User> register({
+    required String fullName,
+    required String email,
+    required String password,
+  }) =>
+      _emailSession(() => AuthApiService.instance
+          .register(fullName: fullName, email: email, password: password));
+
+  Future<User> _emailSession(Future<User> Function() request) async {
+    try {
+      _currentUser = await request();
+      _photoUrl = null;
+      _signInMethod = 'email';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_photoKey);
+      await prefs.setString(_methodKey, 'email');
+      notifyListeners();
+      return _currentUser!;
+    } on AuthApiException catch (e) {
+      throw AuthException(e.message);
+    } catch (e) {
+      throw const AuthException('Could not finish signing in. Try again.');
+    }
   }
 
   /// Signs in to FabriCare with the Google account the user picked.
@@ -54,7 +90,9 @@ class AuthService extends ChangeNotifier {
           await AuthApiService.instance.signInWithGoogle(idToken);
       _currentUser = session.user;
       _photoUrl = session.picture ?? account.photoUrl;
+      _signInMethod = 'google';
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_methodKey, 'google');
       if (_photoUrl == null) {
         await prefs.remove(_photoKey);
       } else {
@@ -77,7 +115,10 @@ class AuthService extends ChangeNotifier {
     await GoogleAuth.instance.signOut();
     _currentUser = null;
     _photoUrl = null;
-    await (await SharedPreferences.getInstance()).remove(_photoKey);
+    _signInMethod = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_photoKey);
+    await prefs.remove(_methodKey);
     notifyListeners();
   }
 

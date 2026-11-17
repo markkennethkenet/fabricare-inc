@@ -11,9 +11,9 @@ import '../../theme/app_theme.dart';
 import '../../widgets/google_web_button.dart';
 import '../home/home_shell.dart';
 
-/// Google-only sign-in. A returning user is signed back in without a prompt
-/// when Google allows it; new users get an account named after their Google
-/// profile.
+/// Google sign-in, with email login and sign-up as an alternative. A returning
+/// Google user is signed back in without a prompt when Google allows it; new
+/// Google users get an account named after their Google profile.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -27,6 +27,14 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _busy = false;
   bool _webReady = false;
   String? _error;
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _showEmail = false;
+  bool _creating = false;
+  bool _emailBusy = false;
+  bool _obscure = true;
 
   @override
   void initState() {
@@ -49,8 +57,142 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void dispose() {
     _events?.cancel();
+    _name.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
   }
+
+  Future<void> _submitEmail() async {
+    if (_busy || _emailBusy || !_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _emailBusy = true;
+      _error = null;
+    });
+    try {
+      if (_creating) {
+        await AuthService.instance.register(
+            fullName: _name.text.trim(),
+            email: _email.text.trim(),
+            password: _password.text);
+      } else {
+        await AuthService.instance
+            .login(email: _email.text.trim(), password: _password.text);
+      }
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeShell()),
+        (route) => false,
+      );
+      return;
+    } on AuthException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    }
+    if (mounted) setState(() => _emailBusy = false);
+  }
+
+  static final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
+  Widget _emailForm() => Form(
+        key: _formKey,
+        child: AutofillGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Log in')),
+                  ButtonSegment(value: true, label: Text('Create account')),
+                ],
+                selected: {_creating},
+                onSelectionChanged: _emailBusy
+                    ? null
+                    : (value) => setState(() {
+                          _creating = value.first;
+                          _error = null;
+                        }),
+              ),
+              const SizedBox(height: 14),
+              if (_creating) ...[
+                TextFormField(
+                  controller: _name,
+                  enabled: !_emailBusy,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.name],
+                  decoration: const InputDecoration(
+                    labelText: 'Full name',
+                    prefixIcon: Icon(Icons.person_outline_rounded),
+                  ),
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Enter your name'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextFormField(
+                controller: _email,
+                enabled: !_emailBusy,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.email],
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: Icon(Icons.email_outlined),
+                ),
+                validator: (value) =>
+                    _emailPattern.hasMatch(value?.trim() ?? '')
+                        ? null
+                        : 'Enter a valid email',
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _password,
+                enabled: !_emailBusy,
+                obscureText: _obscure,
+                textInputAction: TextInputAction.done,
+                autofillHints: [
+                  _creating ? AutofillHints.newPassword : AutofillHints.password
+                ],
+                onFieldSubmitted: (_) => _submitEmail(),
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(Icons.lock_outline_rounded),
+                  suffixIcon: IconButton(
+                    tooltip: _obscure ? 'Show password' : 'Hide password',
+                    icon: Icon(_obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Enter your password';
+                  }
+                  if (_creating && value.length < 8) {
+                    return 'Use at least 8 characters';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 14),
+              ElevatedButton(
+                onPressed: _busy || _emailBusy ? null : _submitEmail,
+                child: _emailBusy
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(_creating ? 'Create account' : 'Log in'),
+              ),
+            ],
+          ),
+        ),
+      );
 
   Future<void> _signInReturningUser() async {
     setState(() => _busy = true);
@@ -140,7 +282,8 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     }
-    return _GoogleButton(busy: _busy, onPressed: _busy ? null : _signIn);
+    return _GoogleButton(
+        busy: _busy, onPressed: _busy || _emailBusy ? null : _signIn);
   }
 
   @override
@@ -221,6 +364,30 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 28),
                   _signInArea(),
+                  const SizedBox(height: 14),
+                  const Row(children: [
+                    Expanded(child: Divider()),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10),
+                      child: Text('or',
+                          style: TextStyle(color: AppColors.inkSoft)),
+                    ),
+                    Expanded(child: Divider()),
+                  ]),
+                  const SizedBox(height: 8),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    alignment: Alignment.topCenter,
+                    child: _showEmail
+                        ? _emailForm()
+                        : TextButton.icon(
+                            onPressed: _busy
+                                ? null
+                                : () => setState(() => _showEmail = true),
+                            icon: const Icon(Icons.mail_outline_rounded),
+                            label: const Text('Use email instead'),
+                          ),
+                  ),
                   AnimatedSize(
                     duration: const Duration(milliseconds: 200),
                     child: _error == null
@@ -235,7 +402,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           size: 14, color: AppColors.inkSoft),
                       SizedBox(width: 6),
                       Flexible(
-                        child: Text('We only use your Google name and email.',
+                        child: Text('We only use your name and email.',
                             style: TextStyle(
                                 fontSize: 12.5, color: AppColors.inkSoft)),
                       ),

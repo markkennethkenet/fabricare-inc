@@ -26,17 +26,56 @@ ScanResult scan(String id, DateTime date, String fabric,
     );
 
 void main() {
-  testWidgets('login offers Google only and explains a build without it',
+  testWidgets('login leads with Google and keeps email behind a link',
       (tester) async {
     await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
     expect(find.text('Know your fabric.\nCare for it right.'), findsOneWidget);
     await tester.pumpAndSettle(); // the silent sign-in attempt finds no account
     expect(find.text('Continue with Google'), findsOneWidget);
-    expect(find.text('We only use your Google name and email.'),
-        findsOneWidget);
+    expect(find.text('Use email instead'), findsOneWidget);
+    expect(find.text('We only use your name and email.'), findsOneWidget);
     for (final gone in ['Continue with Apple', 'Sign Up', 'Password', 'Email']) {
       expect(find.textContaining(gone), findsNothing, reason: gone);
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('email login and sign-up sit behind "Use email instead"',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+    await tester.pumpAndSettle();
+    expect(find.text('Password'), findsNothing);
+    await tester.ensureVisible(find.text('Use email instead'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use email instead'));
+    await tester.pumpAndSettle();
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Full name'), findsNothing);
+
+    final logIn = find.widgetWithText(ElevatedButton, 'Log in');
+    await tester.ensureVisible(logIn);
+    await tester.tap(logIn);
+    await tester.pump();
+    expect(find.text('Enter a valid email'), findsOneWidget);
+    expect(find.text('Enter your password'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Create account').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create account').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Full name'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextFormField, 'Full name'), 'Pat');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Email'), 'pat@example.com');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Password'), 'short');
+    final create = find.widgetWithText(ElevatedButton, 'Create account');
+    await tester.ensureVisible(create);
+    await tester.tap(create);
+    await tester.pump();
+    expect(find.text('Use at least 8 characters'), findsOneWidget);
+    expect(find.text('Enter a valid email'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

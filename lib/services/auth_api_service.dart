@@ -63,6 +63,35 @@ class AuthApiService {
     return headers;
   }
 
+  Future<User> register({
+    required String fullName,
+    required String email,
+    required String password,
+  }) async {
+    final response = await _send(http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/register'),
+      headers: _headers(),
+      body: jsonEncode({
+        'full_name': fullName,
+        'email': email,
+        'password': password,
+      }),
+    ));
+    return _parseAuthResponse(response);
+  }
+
+  Future<User> login({
+    required String email,
+    required String password,
+  }) async {
+    final response = await _send(http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/login'),
+      headers: _headers(),
+      body: jsonEncode({'email': email, 'password': password}),
+    ));
+    return _parseAuthResponse(response);
+  }
+
   /// Exchanges a Google ID token for a FabriCare session. The server creates
   /// the account on first sign-in, named after the Google profile.
   Future<({User user, String? picture})> signInWithGoogle(

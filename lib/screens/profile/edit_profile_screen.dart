@@ -17,6 +17,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _phone;
   late final TextEditingController _location;
   bool _saving = false;
+  final bool _google = AuthService.instance.signedInWithGoogle;
 
   @override
   void initState() {
@@ -102,15 +103,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       : null,
                 ),
                 const SizedBox(height: 14),
-                // The email identifies the Google account, so it is read-only.
+                // A Google account's email identifies it, so it is read-only.
                 TextFormField(
                   controller: _email,
-                  enabled: false,
-                  decoration: const InputDecoration(
+                  enabled: !_google && !_saving,
+                  autofillHints: const [AutofillHints.email],
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  decoration: InputDecoration(
                     labelText: 'Email address',
-                    helperText: 'From your Google account',
-                    prefixIcon: Icon(Icons.email_outlined),
+                    helperText: _google ? 'From your Google account' : null,
+                    prefixIcon: const Icon(Icons.email_outlined),
                   ),
+                  validator: (value) =>
+                      value == null || !value.trim().contains('@')
+                          ? 'Enter a valid email'
+                          : null,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
