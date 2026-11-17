@@ -5,6 +5,7 @@
 !requirements-hosting.txt
 !assessment.py
 !care_model.py
+!gemini_care.py
 !assessment_config.json
 !auth_routes.py
 !database.py

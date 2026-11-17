@@ -142,6 +142,15 @@ habits. `/review-damage` refreshes `ai_care` when the app sends the scan's saved
 `care_features`. The local Qwen `/vision-opinion` route was removed, and the app no
 longer asks for the GLCM SVM second opinion.
 
+With `GEMINI_API_KEY` set, `gemini_care.py` asks Gemini (`GEMINI_MODEL`, default
+`gemini-3.5-flash-lite`, free tier) to reword those tips for the garment from the scan results
+and, unless `GEMINI_SEND_PHOTO=false`, a 768-pixel copy of the front photo. The care model's
+mode, the care label and the referenced tips are sent as facts it must follow. `ai_care` then
+carries Gemini's sentences, `writer`, a `provided_by` ending in "· worded by Gemini", and the
+original tips under `reference_tips`. No key, an 8-second timeout, a used-up quota (HTTP 429)
+or a malformed answer keeps the referenced tips. Google may use free-tier requests to improve
+its products.
+
 ### Google sign-in
 
 `POST /auth/google` takes `{"id_token": ...}` from Google Sign-In, verifies its

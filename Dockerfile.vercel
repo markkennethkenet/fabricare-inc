@@ -18,7 +18,7 @@ COPY requirements.txt requirements-hosting.txt ./
 RUN python -m pip install -r requirements-hosting.txt
 
 COPY assessment.py assessment_config.json auth_routes.py database.py db_config.py ./
-COPY care_model.py fabricare_api.py image_processing.py model_analysis.py model_runtime.py serve_api.py ./
+COPY care_model.py fabricare_api.py gemini_care.py image_processing.py model_analysis.py model_runtime.py serve_api.py ./
 COPY model/ ./model/
 
 CMD ["python", "serve_api.py"]

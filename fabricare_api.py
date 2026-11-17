@@ -25,6 +25,7 @@ from model_runtime import (
 )
 from model_analysis import model_result, validate_image_file
 import care_model
+import gemini_care
 from assessment import REFERENCES
 
 app = Flask(__name__)
@@ -201,10 +202,10 @@ def ai_care_for(records, fabric_type, detections, user_inputs, *, fabric_confirm
         app.logger.exception("Care features could not be extracted")
         return {"status": "unavailable"}
     return ai_care_from_row(row, fabric_type, user_inputs, fabric_confirmed=fabric_confirmed,
-                            fabric_model=fabric_model)
+                            fabric_model=fabric_model, photo_path=front["path"])
 
 
-def ai_care_from_row(row, fabric_type, user_inputs, *, fabric_confirmed=True, fabric_model=None):
+def ai_care_from_row(row, fabric_type, user_inputs, *, fabric_confirmed=True, fabric_model=None, photo_path=None):
     reference_mode, reasons = care_model.reference_laundry_mode(row)
     recommender = load_care_recommender() if fabric_type in care_model.FABRICS else None
     if recommender is not None:
@@ -219,12 +220,25 @@ def ai_care_from_row(row, fabric_type, user_inputs, *, fabric_confirmed=True, fa
     provided_by = (f"{model_name} care model" if status == "model_suggestion" else "FabriCare care rules")
     if isinstance(fabric_model, str) and fabric_model:
         provided_by += f" · {fabric_model} fabric result"
+    care = care_model.care_tips(row, user_inputs, fabric_confirmed)
+    written, writer = None, None
+    if gemini_care.enabled():
+        # Gemini rewords the referenced tips for this garment; the care model's mode and the label still rule.
+        written = gemini_care.write_care_advice(
+            gemini_care.scan_facts(fabric_type, fabric_confirmed, care_model.LAUNDRY_MODES[mode], headline, row,
+                                   user_inputs, care, laundry), photo_path)
+    if written:
+        writer = gemini_care.model_name()
+        provided_by += " · worded by Gemini"
     return {
         "status": status, "model": model_name, "laundry_mode": mode,
         "label": care_model.LAUNDRY_MODES[mode], "detail": care_model.MODE_DETAILS[mode],
-        "headline": headline, "provided_by": provided_by,
-        "care_tips": care_model.care_tips(row, user_inputs, fabric_confirmed),
-        "laundry_tips": laundry,
+        "headline": headline, "provided_by": provided_by, "writer": writer,
+        "care_tips": ([{"text": text, "reference_ids": []} for text in written["care_tips"]] if written else care),
+        "laundry_tips": ([{"text": text, "reference_ids": []} for text in written["laundry_tips"]]
+                         if written else laundry),
+        # The referenced tips the advice is based on, kept when Gemini rewords them.
+        "reference_tips": {"care": care, "laundry": laundry},
         "confidence": prediction["confidence"], "probabilities": prediction["probabilities"],
         "reference_mode": reference_mode, "agrees_with_reference": mode == reference_mode,
         "reasons": [{"text": text, "reference_ids": refs} for text, refs in reasons],
@@ -238,8 +252,9 @@ def ai_care_from_row(row, fabric_type, user_inputs, *, fabric_confirmed=True, fa
 
 def with_care_references(references, ai_care):
     """Add the sources cited by the care suggestion and alerts to the response references."""
-    cited = {ref for key in ("reasons", "alerts", "care_tips", "laundry_tips")
-             for entry in ai_care.get(key, []) for ref in entry["reference_ids"]}
+    entries = [entry for key in ("reasons", "alerts", "care_tips", "laundry_tips") for entry in ai_care.get(key, [])]
+    entries += [entry for tips in (ai_care.get("reference_tips") or {}).values() for entry in tips]
+    cited = {ref for entry in entries for ref in entry["reference_ids"]}
     known = {entry["id"] for entry in references}
     extra = [{"id": ref, "title": REFERENCES[ref][0], "url": REFERENCES[ref][1]}
              for ref in sorted(cited - known) if ref in REFERENCES]
