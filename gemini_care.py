@@ -30,7 +30,8 @@ log = logging.getLogger(__name__)
 SYSTEM = (
     "You write garment care advice for the FabriCare app, for the one garment described. "
     "Write at most 3 care recommendations and at most 3 laundry steps, each a single plain sentence under 25 words. "
-    "Follow the laundry mode chosen by FabriCare's care model and never go beyond the care label limits given. "
+    "Use exactly the wash method in laundry_mode_to_follow; it already applies the care label and the fabric "
+    "certainty, so never suggest a different method. Never go beyond the care label limits given. "
     "Put damage first when there is any. If the fabric is unconfirmed, keep to gentle care and say to check the "
     "fibre label. Use only the facts given and what the photo plainly shows; do not invent fabric, damage, "
     "chemicals, brands or numbers. Draw on the verified guidance provided."
@@ -120,10 +121,13 @@ def scan_facts(fabric_type, fabric_confirmed, laundry_mode_label, headline, row,
              if value not in (None, "unknown")}
     habits = {name: user_inputs.get(name) for name in ("use_frequency", "washing_frequency", "laundering_practice")
               if user_inputs.get(name) not in (None, "", "unspecified")}
+    # The headline, not the care model's raw mode, is what the card shows: it applies the care label and,
+    # for an unconfirmed fabric, the gentlest wash. Gemini must not contradict it.
     return {
         "fabric": fabric_type if fabric_confirmed else f"{fabric_type} (unconfirmed)",
-        "laundry_mode_from_care_model": laundry_mode_label,
-        "laundry_headline": headline,
+        "laundry_mode_to_follow": headline,
+        **({"care_model_suggestion_before_safety_checks": laundry_mode_label}
+           if laundry_mode_label != headline else {}),
         "damage_found": [kind for kind in DAMAGE_TYPES if row.get(f"{kind}_count", 0) > 0],
         "colour": ("dark or strongly coloured" if is_dark_or_strong(row)
                    else "light" if row.get("luminance_mean", 0) >= 170 else "medium"),

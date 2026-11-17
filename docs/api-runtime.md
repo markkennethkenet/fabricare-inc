@@ -144,8 +144,9 @@ longer asks for the GLCM SVM second opinion.
 
 With `GEMINI_API_KEY` set, `gemini_care.py` asks Gemini (`GEMINI_MODEL`, default
 `gemini-3.5-flash-lite`, free tier) to reword those tips for the garment from the scan results
-and, unless `GEMINI_SEND_PHOTO=false`, a 768-pixel copy of the front photo. The care model's
-mode, the care label and the referenced tips are sent as facts it must follow. `ai_care` then
+and, unless `GEMINI_SEND_PHOTO=false`, a 768-pixel copy of the front photo. The card's headline (the care model's mode after
+the care label and the unconfirmed-fabric check), the care label and the referenced tips are sent
+as facts it must follow; it may not suggest a different wash method. `ai_care` then
 carries Gemini's sentences, `writer`, a `provided_by` ending in "· worded by Gemini", and the
 original tips under `reference_tips`. No key, an 8-second timeout, a used-up quota (HTTP 429)
 or a malformed answer keeps the referenced tips. Google may use free-tier requests to improve

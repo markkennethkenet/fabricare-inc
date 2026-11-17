@@ -59,7 +59,7 @@ class GeminiCareTests(unittest.TestCase):
         self.assertIn('"fabric": "denim"', parts[0]["text"])
         self.assertEqual(parts[1]["inlineData"]["mimeType"], "image/jpeg")
         self.assertEqual(body["generationConfig"]["responseMimeType"], "application/json")
-        self.assertIn("never go beyond the care label limits", body["systemInstruction"]["parts"][0]["text"])
+        self.assertIn("Never go beyond the care label limits", body["systemInstruction"]["parts"][0]["text"])
 
     @patch.dict("os.environ", {"GEMINI_API_KEY": "test-key", "GEMINI_SEND_PHOTO": "false"})
     def test_photo_can_be_left_out(self):
@@ -96,6 +96,7 @@ class ApiIntegrationTests(unittest.TestCase):
             care = api.ai_care_from_row(row, "denim", inputs, fabric_model="ConvNeXt-Tiny (V4)")
         facts = write.call_args.args[0]
         self.assertEqual(facts["colour"], "dark or strongly coloured")
+        self.assertEqual(facts["laundry_mode_to_follow"], care["headline"])
         self.assertTrue(facts["verified_guidance"])
         self.assertEqual(care["care_tips"][0]["text"], "Wash your dark jeans inside out.")
         self.assertEqual(care["writer"], "gemini-3.5-flash-lite")
@@ -107,6 +108,23 @@ class ApiIntegrationTests(unittest.TestCase):
             plain = api.ai_care_from_row(row, "denim", inputs)
         self.assertIsNone(plain["writer"])
         self.assertEqual(plain["care_tips"], plain["reference_tips"]["care"])
+
+    def test_gemini_must_follow_the_safer_headline_for_an_unconfirmed_fabric(self):
+        import care_model
+        import fabricare_api as api
+        from assessment import normalize_user_inputs
+
+        row = care_model.feature_row("polyester", care_model.damage_features([]),
+                                     {"luminance_mean": 150.0, "luminance_std": 10.0, "saturation_mean": 0.1,
+                                      "dark_fraction": 0.1}, care_model.glcm_summary(list(range(72))))
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}), \
+                patch("gemini_care.write_care_advice", return_value=None) as write:
+            care = api.ai_care_from_row(row, "polyester", normalize_user_inputs({}), fabric_confirmed=False)
+        facts = write.call_args.args[0]
+        self.assertEqual(care["headline"], care_model.LAUNDRY_MODES["hand_wash_cold"])
+        self.assertEqual(facts["laundry_mode_to_follow"], care["headline"])
+        self.assertEqual(facts["fabric"], "polyester (unconfirmed)")
+        self.assertIn("never suggest a different method", gemini_care.SYSTEM)
 
 
 class DeploymentFilesTests(unittest.TestCase):

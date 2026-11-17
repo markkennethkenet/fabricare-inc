@@ -21,6 +21,10 @@ class ApiContractTests(unittest.TestCase):
         cls.client = cls.api.app.test_client()
 
     def setUp(self):
+        # db_config loads .env, which may hold a real GEMINI_API_KEY: tests never call Gemini.
+        gemini_off = patch.dict(os.environ, {'GEMINI_API_KEY': ''})
+        gemini_off.start()
+        self.addCleanup(gemini_off.stop)
         self.fabric = patch.object(self.api, 'classify_fabric', return_value={
             'fabric_type': 'future_fabric', 'confidence': 85,
             'probabilities': {'future_fabric': .85, 'other': .15}})
