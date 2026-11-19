@@ -64,7 +64,7 @@ def _fetch_user_by_email(email):
     return _user_row_to_dict(row)
 
 
-def _create_token(user_id):
+def _create_token(user_id, expires_at=None):
     token = secrets.token_urlsafe(32)
     now = int(time.time() * 1000)
     with get_connection() as conn:
@@ -72,9 +72,9 @@ def _create_token(user_id):
         cursor.execute(
             """
             INSERT INTO auth_tokens (token, user_id, created_at, expires_at)
-            VALUES (%s, %s, %s, NULL)
+            VALUES (%s, %s, %s, %s)
             """,
-            (token, user_id, now),
+            (token, user_id, now, expires_at),
         )
         cursor.close()
     return token
@@ -94,9 +94,10 @@ def _user_id_from_token(token):
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT user_id FROM auth_tokens WHERE token = %s
+            SELECT user_id FROM auth_tokens
+            WHERE token = %s AND (expires_at IS NULL OR expires_at > %s)
             """,
-            (token,),
+            (token, int(time.time() * 1000)),
         )
         row = cursor.fetchone()
         cursor.close()
@@ -126,6 +127,31 @@ def _require_auth():
     if user is None:
         return None, (jsonify({"error": "Unauthorized."}), 401)
     return user, None
+
+
+@auth_bp.post("/demo")
+def demo_sign_in():
+    code = os.environ.get("FABRICARE_DEMO_CODE")
+    user_id = os.environ.get("FABRICARE_DEMO_USER_ID", "")
+    expiry = os.environ.get("FABRICARE_DEMO_EXPIRES_AT", "")
+    if (
+        request.remote_addr not in {"127.0.0.1", "::1"}
+        or not code
+        or not user_id.isdecimal()
+        or (expiry != "never" and not expiry.isdecimal())
+    ):
+        return jsonify({"error": "Demo sign-in is unavailable."}), 404
+    expires_at = None if expiry == "never" else int(expiry)
+    if expires_at is not None and expires_at <= int(time.time() * 1000):
+        return jsonify({"error": "This demo account has expired."}), 401
+    data = request.get_json(silent=True)
+    entered = data.get("code") if isinstance(data, dict) else None
+    if not isinstance(entered, str) or not secrets.compare_digest(entered.strip().encode(), code.encode()):
+        return jsonify({"error": "Incorrect demo code."}), 401
+    user = _fetch_user_by_id(int(user_id))
+    if user is None:
+        return jsonify({"error": "Demo account is unavailable."}), 503
+    return jsonify({"user": user, "token": _create_token(user["id"], expires_at), "expires_at": expires_at})
 
 
 @auth_bp.route("/register", methods=["POST"])

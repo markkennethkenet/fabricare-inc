@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +21,8 @@ class AuthService extends ChangeNotifier {
   static final AuthService instance = AuthService._();
 
   static const _photoKey = 'fabricare_google_photo';
+  static const _demoExpiryKey = 'fabricare_demo_expiry';
+  Timer? _demoTimer;
 
   User? _currentUser;
   User? get currentUser => _currentUser;
@@ -33,7 +37,10 @@ class AuthService extends ChangeNotifier {
     try {
       _currentUser = await AuthApiService.instance.fetchCurrentUser();
       if (_currentUser != null) {
-        _photoUrl = (await SharedPreferences.getInstance()).getString(_photoKey);
+        final prefs = await SharedPreferences.getInstance();
+        _photoUrl = prefs.getString(_photoKey);
+        final expiry = prefs.getInt(_demoExpiryKey);
+        if (expiry != null) _scheduleDemoExpiry(expiry);
       }
     } catch (e) {
       debugPrint('Auth restore failed: $e');
@@ -50,11 +57,12 @@ class AuthService extends ChangeNotifier {
           'Google did not return a sign-in token. Try again.');
     }
     try {
-      final session =
-          await AuthApiService.instance.signInWithGoogle(idToken);
+      final session = await AuthApiService.instance.signInWithGoogle(idToken);
       _currentUser = session.user;
       _photoUrl = session.picture ?? account.photoUrl;
       final prefs = await SharedPreferences.getInstance();
+      _demoTimer?.cancel();
+      await prefs.remove(_demoExpiryKey);
       if (_photoUrl == null) {
         await prefs.remove(_photoKey);
       } else {
@@ -71,13 +79,45 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  Future<void> signInForDemo(String code) async {
+    final session = await AuthApiService.instance.signInForDemo(code);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_photoKey);
+    final expiresAt = session.expiresAt;
+    if (expiresAt == null) {
+      _demoTimer?.cancel();
+      await prefs.remove(_demoExpiryKey);
+    } else {
+      await prefs.setInt(_demoExpiryKey, expiresAt);
+      _scheduleDemoExpiry(expiresAt);
+    }
+    _currentUser = session.user;
+    _photoUrl = null;
+    notifyListeners();
+  }
+
+  void _scheduleDemoExpiry(int expiresAt) {
+    _demoTimer?.cancel();
+    _demoTimer = Timer(
+      Duration(milliseconds: expiresAt - DateTime.now().millisecondsSinceEpoch),
+      () {
+        _currentUser = null;
+        _photoUrl = null;
+        notifyListeners();
+      },
+    );
+  }
+
   Future<void> logout() async {
     await AuthApiService.instance.logout();
     // Forget the Google choice so the next sign-in can pick another account.
     await GoogleAuth.instance.signOut();
     _currentUser = null;
     _photoUrl = null;
-    await (await SharedPreferences.getInstance()).remove(_photoKey);
+    _demoTimer?.cancel();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_photoKey);
+    await prefs.remove(_demoExpiryKey);
     notifyListeners();
   }
 
