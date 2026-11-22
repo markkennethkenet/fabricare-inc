@@ -29,6 +29,9 @@ class V7DetectorDataTest(unittest.TestCase):
     def test_roboflow_class_names_in_any_order(self):
         mapping = v7.roboflow_mapping(["Stain", "hole", "needle_mark", "wrinkle", "pilling"])
         self.assertEqual(mapping, {0: 3, 1: 0, 2: 1, 4: 2})
+        # The team's Roboflow project: a project-name class and "Normal" are not damage classes.
+        mapping = v7.roboflow_mapping(["FabriCare-Fabric-Damage", "Hole", "Needle_Marks", "Normal", "Stain", "Needle Marks"])
+        self.assertEqual(mapping, {1: 0, 2: 1, 4: 3, 5: 1})
 
     def test_round_names_and_original_names(self):
         self.assertEqual(v7.round_zip_name(1), "v7_prelabels.zip")

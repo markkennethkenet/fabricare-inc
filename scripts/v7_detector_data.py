@@ -75,11 +75,12 @@ def remap_label_lines(text, mapping):
 
 def roboflow_mapping(names):
     """Map a Roboflow export's class list (any order, any case) onto APP_CLASSES; unknown classes are dropped."""
-    aliases = {"needle_mark": "needlemark", "needle mark": "needlemark", "holes": "hole", "stains": "stain",
-               "needlemarks": "needlemark", "pill": "pilling"}
+    aliases = {"needle_mark": "needlemark", "needle_marks": "needlemark", "needlemarks": "needlemark",
+               "holes": "hole", "stains": "stain", "pill": "pilling", "pills": "pilling"}
     mapping = {}
     for index, name in enumerate(names):
-        key = aliases.get(str(name).strip().lower(), str(name).strip().lower())
+        key = "_".join(str(name).strip().lower().replace("-", " ").split())   # "Needle Marks" -> "needle_marks"
+        key = aliases.get(key, key)
         if key in APP_CLASSES:
             mapping[index] = APP_CLASSES.index(key)
     return mapping
