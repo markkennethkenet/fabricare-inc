@@ -226,6 +226,40 @@ if ROBOFLOW_VERSION:
 """)
 
 code(r"""
+# 3d. No credits to generate a version? Export the labelled images with Roboflow's search export instead: it
+#     packages a project's images and boxes as YOLOv8 without a dataset version. Uses the same API key (cell 3b).
+#     Set EXPORT_PROJECT to the project id in app.roboflow.com/<workspace>/<project id>. Leave "" to skip.
+EXPORT_PROJECT = "fabric-defects-urfvs"
+if EXPORT_PROJECT:
+    target = DATASET / "Annotated_Dataset" / f"search_export_{EXPORT_PROJECT}"
+    if target.exists() and any(target.rglob("data.yaml")):
+        print("Already exported:", target, "(delete that folder to export again)")
+    else:
+        from roboflow.adapters.rfapi import RoboflowError
+        workspace = roboflow_workspace()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        errors = []
+        for query in (f"project:{EXPORT_PROJECT}", "*"):   # every image in the project
+            try:
+                workspace.search_export(query=query, format="yolov8", dataset=EXPORT_PROJECT, location=str(target))
+                break
+            except RoboflowError as error:
+                errors.append(f"{query!r}: {error}")
+                shutil.rmtree(target, ignore_errors=True)
+                if any(w in str(error).lower() for w in ("credit", "usage", "billing", "limit")):
+                    break
+        else:
+            errors.append("no query worked")
+        if not target.exists():
+            raise SystemExit("Search export failed (if it mentions credits, wait for the reset or generate a "
+                             "version later and use cell 3c):\n" + "\n".join(errors))
+        if not any(target.rglob("data.yaml")):
+            raise SystemExit(f"The export in {target} has no data.yaml, so its class names are unknown.")
+        images = [p for p in target.rglob("*") if p.suffix.lower() in SUFFIXES and p.parent.name == "images"]
+        print(f"Exported {len(images)} labelled images into {target}. Part B reads it from there.")
+""")
+
+code(r"""
 # 4. Read the Roboflow YOLOv8 export, map classes, and split by garment (70/15/15).
 annotated = DATASET / "Annotated_Dataset"
 # Oldest first: a later Roboflow version contains the earlier photos too, and its labels win.

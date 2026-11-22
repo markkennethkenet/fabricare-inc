@@ -56,6 +56,11 @@ resizes). Note its version number. Then either set `ROBOFLOW_VERSION` to that nu
 the **YOLOv8** export straight into `My Drive/FabriCare_Damage_Dataset/Annotated_Dataset/`, or download the YOLOv8
 zip yourself and put it there. Roboflow's own train/valid/test split is ignored; the notebook re-splits by garment.
 
+**Out of credits?** Generating a version needs credits. Cell 3d instead uses Roboflow's *search export*, which
+packages the project's labelled images as YOLOv8 without a version, into `Annotated_Dataset/search_export_<project>/`.
+Set `EXPORT_PROJECT` to the project id (from `app.roboflow.com/<workspace>/<project id>`) and run it with the same
+API key as cell 3b. If Roboflow refuses it because of credits, wait for the monthly reset and use cell 3c.
+
 ## 5. Train (Colab, Part B)
 
 Run Part B. It fine-tunes the current detector on your labels (plus the public dataset if
