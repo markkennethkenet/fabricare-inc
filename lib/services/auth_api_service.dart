@@ -106,6 +106,23 @@ class AuthApiService {
     return (user: user, picture: body['picture'] as String?);
   }
 
+  Future<({User user, int? expiresAt})> signInForDemo(String code) async {
+    final response = await _send(http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/demo'),
+      headers: _headers(),
+      body: jsonEncode({'code': code}),
+    ));
+    if (response.statusCode != 200) {
+      throw AuthApiException(_errorMessage(response));
+    }
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final expiresAt = body['expires_at'];
+    if (!body.containsKey('expires_at') || (expiresAt != null && expiresAt is! int)) {
+      throw const AuthApiException('The demo expiry could not be verified.');
+    }
+    return (user: await _parseAuthResponse(response), expiresAt: expiresAt as int?);
+  }
+
   Future<User?> fetchCurrentUser() async {
     if (_token == null || _token!.isEmpty) return null;
 

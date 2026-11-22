@@ -23,6 +23,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _google = GoogleAuth.instance;
+  static const _demoEnabled = bool.fromEnvironment('FABRICARE_DEMO_SIGN_IN');
   StreamSubscription<GoogleSignInAuthenticationEvent>? _events;
   bool _busy = false;
   bool _webReady = false;
@@ -264,6 +265,53 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _signInForDemo() async {
+    var code = '';
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Demo sign-in'),
+        content: TextField(
+          autofocus: true,
+          obscureText: true,
+          onChanged: (value) => code = value,
+          decoration: const InputDecoration(labelText: 'Demo code'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialog),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialog, code),
+              child: const Text('Sign in')),
+        ],
+      ),
+    );
+    if (!mounted || entered == null || entered.trim().isEmpty) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final auth = AuthService.instance;
+      await auth.signInForDemo(entered);
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+            builder: (_) => ListenableBuilder(
+                  listenable: auth,
+                  builder: (_, __) =>
+                      auth.isLoggedIn ? const HomeShell() : const LoginScreen(),
+                )),
+        (_) => false,
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Widget _signInArea() {
     if (!_google.isSupportedPlatform) {
       return const _Notice(
@@ -347,7 +395,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.4)),
                         SizedBox(height: 10),
-                        Text('Scan a garment to see its fabric, condition and care.',
+                        Text(
+                            'Scan a garment to see its fabric, condition and care.',
                             style: TextStyle(
                                 color: AppColors.inkSoft,
                                 fontSize: 15,
@@ -388,6 +437,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             label: const Text('Use email instead'),
                           ),
                   ),
+                  if (_demoEnabled && !kIsWeb)
+                    TextButton(
+                      onPressed: _busy ? null : _signInForDemo,
+                      child: const Text('Use demo code'),
+                    ),
                   AnimatedSize(
                     duration: const Duration(milliseconds: 200),
                     child: _error == null
@@ -581,8 +635,8 @@ class _GoogleLogoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final side = size.shortestSide;
     final stroke = side * 0.22;
-    final rect = Rect.fromLTWH(
-        stroke / 2, stroke / 2, side - stroke, side - stroke);
+    final rect =
+        Rect.fromLTWH(stroke / 2, stroke / 2, side - stroke, side - stroke);
     Paint arc(Color color) => Paint()
       ..color = color
       ..style = PaintingStyle.stroke

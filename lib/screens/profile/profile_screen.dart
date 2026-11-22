@@ -73,9 +73,12 @@ class ProfileScreen extends StatelessWidget {
                                       ),
                                     ),
                                     Text(
-                                        AuthService.instance.signedInWithGoogle
-                                            ? 'Signed in with Google'
-                                            : 'Signed in with email',
+                                        AuthService.instance.signedInWithDemo
+                                            ? 'Signed in with demo code'
+                                            : AuthService.instance
+                                                    .signedInWithGoogle
+                                                ? 'Signed in with Google'
+                                                : 'Signed in with email',
                                         style: const TextStyle(
                                             color: Color(0xFFD7E2D4),
                                             fontSize: 12.5)),

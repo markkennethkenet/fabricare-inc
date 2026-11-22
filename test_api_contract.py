@@ -60,9 +60,13 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn('damages', body)
 
     def test_selected_models_run_real_inference_on_a_fabric_photo(self):
-        photo = Path(__file__).parent / 'model' / '2b2a6f82-68e1-4d0f-ad22-a011dd8df367.jpg'
+        model_dir = Path(__file__).parent / 'model'
+        photo = model_dir / '2b2a6f82-68e1-4d0f-ad22-a011dd8df367.jpg'
+        # Names come from the installed export, so a retrain does not need a test edit.
+        cnn_name = json.loads((model_dir / 'fabric_cnn' / 'model_info.json').read_text(encoding='utf-8'))['name']
+        care_name = json.loads((model_dir / 'v4_training_report.json').read_text(encoding='utf-8'))['selected_care_model']
         expected = {
-            'cnn': 'ConvNeXt-Tiny (V4)',
+            'cnn': cnn_name,
             'svm': 'GLCM + SVM',
             'glcm_dt': 'GLCM + Decision Tree',
         }
@@ -92,14 +96,14 @@ class ApiContractTests(unittest.TestCase):
                 self.assertEqual(body['lifespan']['status'], 'experimental_estimate')
                 care = body['ai_care']
                 self.assertEqual(care['status'], 'model_suggestion')
-                self.assertEqual(care['model'], 'Decision Tree')
+                self.assertEqual(care['model'], care_name)
                 self.assertTrue(0 < care['confidence'] <= 100)
                 self.assertIn(care['laundry_mode'], care_model.CLASSES)
                 self.assertTrue(care['label'] and care['reasons'])
                 self.assertIsInstance(care['alerts'], list)
                 self.assertTrue(1 <= len(care['care_tips']) <= 3 and 1 <= len(care['laundry_tips']) <= 3)
                 self.assertTrue(care['headline'])
-                self.assertEqual(care['provided_by'], f'Decision Tree care model · {name} fabric result')
+                self.assertEqual(care['provided_by'], f'{care_name} care model · {name} fabric result')
                 cited = {ref for entry in care['reasons'] + care['alerts'] + care['care_tips'] + care['laundry_tips']
                          for ref in entry['reference_ids']}
                 self.assertTrue(cited <= {ref['id'] for ref in body['references']})
