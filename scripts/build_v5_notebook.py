@@ -171,6 +171,10 @@ print("Phone photos (cotton garment):", len(phone_paths))
 code(r"""
 # 3. Stage every photo once: a 224 px padded copy (scanner input), a ≤1920 px JPEG (detector input)
 #    and colour features from the original. Source photos on Drive are never modified.
+from PIL import UnidentifiedImageError
+from pi_heif import register_heif_opener
+register_heif_opener()  # iPhone HEIC/HEIF photos
+
 def stage(record):
     key = record["sha256"]
     padded, full = STAGE / "padded" / f"{key}.png", STAGE / "full" / f"{key}.jpg"
@@ -178,8 +182,11 @@ def stage(record):
     if meta.is_file() and padded.is_file() and full.is_file():
         return json.loads(meta.read_text())
     content = Path(record["path"]).read_bytes()
-    with Image.open(io.BytesIO(content)) as raw:
-        rgb = ImageOps.exif_transpose(raw).convert("RGB")
+    try:
+        with Image.open(io.BytesIO(content)) as raw:
+            rgb = ImageOps.exif_transpose(raw).convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError) as error:
+        return {"unreadable": str(record["path"]), "error": f"{type(error).__name__}: {error}"}
     for folder in ("padded", "full", "meta"):
         (STAGE / folder).mkdir(parents=True, exist_ok=True)
     ImageOps.pad(rgb, (224, 224), method=Image.Resampling.BILINEAR, color=(127, 127, 127)).save(padded)
@@ -200,6 +207,13 @@ with ThreadPoolExecutor(max_workers=8) as pool:
         staged.append(item)
         if i % 250 == 0:
             print(f"staged {i}/{len(records) + len(phone_records)} in {time.monotonic() - started:.0f}s", flush=True)
+unreadable = [item for item in staged if "unreadable" in item]
+staged = [item for item in staged if "unreadable" not in item]
+if unreadable:
+    print(f"Skipped {len(unreadable)} files that are not readable images (fix or remove them on Drive):")
+    for item in unreadable:
+        print("  ", item["unreadable"], "|", item["error"])
+    (RUN / "unreadable_images.json").write_text(json.dumps(unreadable, indent=2))
 by_split = defaultdict(list)
 for item in staged:
     by_split[item["split"]].append(item)
