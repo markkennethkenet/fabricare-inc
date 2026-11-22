@@ -27,9 +27,17 @@ instead of drawing every box from scratch.
 
 ## 3. Correct the boxes (Roboflow)
 
-1. Create an **Object Detection** project with exactly these classes: `hole`, `needlemark`, `pilling`, `stain`.
-2. Upload the unzipped `v7_prelabels` folder (images plus YOLO `.txt` labels and `data.yaml`). Keep the file names.
-3. Open each photo and fix the boxes:
+**Send the photos without using your laptop's storage (recommended).** In Colab, open the key icon (Secrets),
+add `ROBOFLOW_API_KEY` with your key from Roboflow → Settings → API Keys, and turn on notebook access. Then run
+cell 3b: it uploads every pre-labelled photo from Drive into the Roboflow project `fabricare-damage-v7`
+(created if missing, as an Object Detection project). Set `ROBOFLOW_WORKSPACE` if you use a team workspace.
+Roboflow's free plan makes projects **public**; use a paid or education plan if the photos must stay private.
+
+**Or upload by hand:** create an **Object Detection** project, download and unzip `v7_prelabels.zip`, and upload
+the folder (images plus YOLO `.txt` labels and `data.yaml`).
+
+1. Check the project has exactly these classes: `hole`, `needlemark`, `pilling`, `stain`. Keep the file names.
+2. Open **Annotate** and fix every photo:
 
 | Class | Box it | Do not box |
 |---|---|---|
@@ -38,15 +46,15 @@ instead of drawing every box from scratch.
 | **pilling** | Patches of fuzz balls; one box per patch | Normal fabric texture, lint you can brush off |
 | **stain** | Discoloured marks: food, oil, rust, sweat yellowing, dye bleeding | **Prints, logos, embroidery, patterns, shadows, wet spots, reflections** |
 
-4. Delete every wrong pre-label box (most often: floor, prints, folds). Leave a photo with **no boxes** if it has no damage: these background photos matter.
-5. Every photo must be checked. An unchecked pre-label teaches the detector its own mistakes.
+3. Delete every wrong pre-label box (most often: floor, prints, folds). Leave a photo with **no boxes** if it has no damage: these background photos matter.
+4. Every photo must be checked. An unchecked pre-label teaches the detector its own mistakes.
 
 ## 4. Export
 
 Generate a dataset version with **no augmentation** and only *Auto-Orient* preprocessing (no resize; the notebook
-resizes). Export in **YOLOv8** format, download the zip, and put it in
-`My Drive/FabriCare_Damage_Dataset/Annotated_Dataset/` (zipped or unzipped). Roboflow's own train/valid/test
-split is ignored; the notebook re-splits by garment.
+resizes). Note its version number. Then either set `ROBOFLOW_VERSION` to that number in Colab cell 3c, which fetches
+the **YOLOv8** export straight into `My Drive/FabriCare_Damage_Dataset/Annotated_Dataset/`, or download the YOLOv8
+zip yourself and put it there. Roboflow's own train/valid/test split is ignored; the notebook re-splits by garment.
 
 ## 5. Train (Colab, Part B)
 

@@ -137,8 +137,66 @@ else:
     print("Saved:", PRELABEL_ZIP, "→ unzip and upload the folder to Roboflow (see docs/damage-annotation-guide.md).")
 """)
 
+code(r"""
+# 3b. Send the pre-labels straight from Drive to Roboflow (nothing is stored on your laptop).
+#     First add your Roboflow API key in Colab's Secrets panel (key icon, left) as ROBOFLOW_API_KEY,
+#     and turn on "Notebook access". Find the key in Roboflow: Settings → API Keys.
+ROBOFLOW_WORKSPACE = ""                    # the <workspace> part of app.roboflow.com/<workspace>; "" = your default
+ROBOFLOW_PROJECT = "fabricare-damage-v7"   # project id: lowercase letters, digits and dashes
+SEND_TO_ROBOFLOW = True
+
+def roboflow_workspace():
+    try:
+        import roboflow  # noqa: F401
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "roboflow==1.7.3"])
+    from google.colab import userdata
+    try:
+        key = userdata.get("ROBOFLOW_API_KEY")
+    except Exception:
+        raise SystemExit("Add your Roboflow API key in Colab's Secrets panel as ROBOFLOW_API_KEY "
+                         "and allow this notebook to read it, then rerun this cell.")
+    from roboflow import Roboflow
+    rf = Roboflow(api_key=key)
+    return rf.workspace(ROBOFLOW_WORKSPACE) if ROBOFLOW_WORKSPACE else rf.workspace()
+
+SENT = DATASET / "v7_prelabels_sent_to_roboflow.txt"
+if not SEND_TO_ROBOFLOW:
+    print("Skipped: upload v7_prelabels.zip to Roboflow yourself.")
+elif SENT.exists():
+    print("Already sent to Roboflow:", SENT.read_text().strip())
+else:
+    folder = Path("/content/v7_prelabels")
+    if not (folder / "images").is_dir():
+        shutil.rmtree(folder, ignore_errors=True)
+        zipfile.ZipFile(PRELABEL_ZIP).extractall(folder)
+    count = len(list((folder / "images").iterdir()))
+    workspace = roboflow_workspace()
+    workspace.upload_dataset(str(folder), ROBOFLOW_PROJECT, num_workers=8, project_type="object-detection",
+                             batch_name="v7 pre-labels", num_retries=2)
+    link = f"https://app.roboflow.com/{workspace.url}/{ROBOFLOW_PROJECT}"
+    SENT.write_text(f"{count} photos to {link} on {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC")
+    print(f"Sent {count} photos with their pre-label boxes.")
+    print(f"Correct them at {link}/annotate (see docs/damage-annotation-guide.md).")
+""")
+
 md(r"""
 ## Part B · Train on the corrected labels and compare with the current detector
+""")
+
+code(r"""
+# 3c. Fetch the corrected export from Roboflow into Drive (Annotated_Dataset/). Set the version number you
+#     generated in Roboflow (Generate → Auto-Orient only, no augmentation). Leave None if you put a zip there yourself.
+ROBOFLOW_VERSION = None
+if ROBOFLOW_VERSION:
+    target = DATASET / "Annotated_Dataset" / f"roboflow_{ROBOFLOW_PROJECT}_v{int(ROBOFLOW_VERSION)}"
+    if (target / "data.yaml").exists():
+        print("Already fetched:", target)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        roboflow_workspace().project(ROBOFLOW_PROJECT).version(int(ROBOFLOW_VERSION)).download(
+            "yolov8", location=str(target), overwrite=True)
+        print("Fetched version", ROBOFLOW_VERSION, "into", target)
 """)
 
 code(r"""
