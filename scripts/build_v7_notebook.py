@@ -86,37 +86,63 @@ md(r"""
 """)
 
 code(r"""
-# 3. Run the current detector on Own_Collected_Dataset and Phone_Scans; keep boxes on the garment; zip for Roboflow.
-PRELABEL_ZIP = DATASET / "v7_prelabels.zip"
+# 3. Pre-label photos for Roboflow, in rounds. Round 1 uses the app's current detector. After Part B has trained a
+#    V7 detector, rerunning this cell makes the next round: only photos not pre-labelled or labelled before, boxed
+#    by the newest V7 detector, so there is less to correct each time.
+INCLUDE_ONLINE = False        # True also pre-labels the 2,200+ Online_Dataset close-ups
 
 def photos():
     for garment in sorted(p for p in (DATASET / "Own_Collected_Dataset").glob("*") if p.is_dir()):
         for folder in sorted(p for p in garment.iterdir() if p.is_dir()):
             for path in sorted(folder.iterdir()):
                 if path.suffix.lower() in SUFFIXES:
-                    yield garment.name, folder.name, path, False      # close-ups: no outline filter
+                    yield v7.prelabel_name(garment.name, folder.name, path.name), path, False   # close-ups
     for garment in sorted(p for p in (DATASET / "Phone_Scans").glob("*") if p.is_dir()):
         for path in sorted(garment.rglob("*")):
             if path.suffix.lower() in SUFFIXES:
-                yield garment.name, "phone", path, True               # whole-garment photos
+                yield v7.prelabel_name(garment.name, "phone", path.name), path, True             # whole garment
+    if INCLUDE_ONLINE:
+        for folder in sorted(p for p in (DATASET / "Online_Dataset").glob("*") if p.is_dir()):
+            for path in sorted(folder.iterdir()):
+                if path.suffix.lower() in SUFFIXES:
+                    yield v7.online_name(folder.name.strip(), path.name), path, False
 
-if PRELABEL_ZIP.exists():
-    print("Pre-labels already made:", PRELABEL_ZIP, "(delete it to rebuild)")
+# Photos already handled: in an earlier pre-label zip, or already labelled in a Roboflow export.
+earlier = sorted(DATASET.glob("v7_prelabels*.zip"), key=lambda z: z.stat().st_mtime)
+done = set()
+for z in earlier:
+    done |= {Path(n).name for n in zipfile.ZipFile(z).namelist() if n.startswith("images/")}
+annotated_dir = DATASET / "Annotated_Dataset"
+for item in (annotated_dir.glob("*") if annotated_dir.exists() else []):
+    names = zipfile.ZipFile(item).namelist() if item.suffix == ".zip" else [str(f) for f in item.rglob("*")]
+    done |= {v7.original_name(Path(n).name) for n in names if Path(n).suffix.lower() in SUFFIXES}
+
+PRELABEL_WEIGHTS = v7.newest_weights(RUN, BASE_WEIGHTS)
+using_v7 = Path(PRELABEL_WEIGHTS) != Path(BASE_WEIGHTS)
+todo = [(name, path, whole) for name, path, whole in photos() if name not in done]
+if not todo:
+    PRELABEL_ZIP = earlier[-1] if earlier else None
+    print("No new photos to pre-label." + (f" Latest round: {PRELABEL_ZIP.name}" if PRELABEL_ZIP else ""))
 else:
-    out = Path("/content/v7_prelabels"); shutil.rmtree(out, ignore_errors=True)
+    round_number = len(earlier) + 1
+    PRELABEL_ZIP = DATASET / v7.round_zip_name(round_number)
+    detector = YOLO(str(PRELABEL_WEIGHTS))
+    print(f"Round {round_number}: {len(todo)} new photos, boxed by",
+          f"the newest V7 detector ({Path(PRELABEL_WEIGHTS).parent.parent.name})" if using_v7
+          else "the app's current detector")
+    out = Path("/content") / PRELABEL_ZIP.stem; shutil.rmtree(out, ignore_errors=True)
     (out / "images").mkdir(parents=True); (out / "labels").mkdir()
     counts, boxes = Counter(), Counter()
-    for garment, view, path, whole in photos():
+    for name, path, whole in todo:
         try:
             with Image.open(path) as raw:
                 rgb = ImageOps.exif_transpose(raw).convert("RGB")
         except Exception as error:
             print("skip unreadable:", path, error); continue
         rgb.thumbnail((1920, 1920))
-        name = v7.prelabel_name(garment, view, path.name)
         rgb.save(out / "images" / name, quality=92)
         image = cv2.cvtColor(np.asarray(rgb), cv2.COLOR_RGB2BGR)
-        result = base.predict(image, imgsz=640, conf=0.25, verbose=False)[0]
+        result = detector.predict(image, imgsz=960 if using_v7 else 640, conf=0.25, verbose=False)[0]
         outline = garment_mask.silhouette(image) if whole else None
         lines = []
         h, w = image.shape[:2]
@@ -134,7 +160,7 @@ else:
                                    "nc: 4\ntrain: images\nval: images\n")
     shutil.make_archive(str(PRELABEL_ZIP.with_suffix("")), "zip", out)
     print("Photos:", dict(counts), "| pre-label boxes:", dict(boxes))
-    print("Saved:", PRELABEL_ZIP, "→ unzip and upload the folder to Roboflow (see docs/damage-annotation-guide.md).")
+    print("Saved:", PRELABEL_ZIP, "→ send it with cell 3b, or upload the unzipped folder to Roboflow yourself.")
 """)
 
 code(r"""
@@ -160,20 +186,20 @@ def roboflow_workspace():
     rf = Roboflow(api_key=key)
     return rf.workspace(ROBOFLOW_WORKSPACE) if ROBOFLOW_WORKSPACE else rf.workspace()
 
-SENT = DATASET / "v7_prelabels_sent_to_roboflow.txt"
-if not SEND_TO_ROBOFLOW:
-    print("Skipped: upload v7_prelabels.zip to Roboflow yourself.")
+SENT = DATASET / f"{PRELABEL_ZIP.stem}_sent_to_roboflow.txt" if PRELABEL_ZIP else None
+if not SEND_TO_ROBOFLOW or PRELABEL_ZIP is None:
+    print("Skipped: nothing to send, or upload the pre-label zip to Roboflow yourself.")
 elif SENT.exists():
     print("Already sent to Roboflow:", SENT.read_text().strip())
 else:
-    folder = Path("/content/v7_prelabels")
+    folder = Path("/content") / PRELABEL_ZIP.stem
     if not (folder / "images").is_dir():
         shutil.rmtree(folder, ignore_errors=True)
         zipfile.ZipFile(PRELABEL_ZIP).extractall(folder)
     count = len(list((folder / "images").iterdir()))
     workspace = roboflow_workspace()
     workspace.upload_dataset(str(folder), ROBOFLOW_PROJECT, num_workers=8, project_type="object-detection",
-                             batch_name="v7 pre-labels", num_retries=2)
+                             batch_name=PRELABEL_ZIP.stem.replace("_", " "), num_retries=2)
     link = f"https://app.roboflow.com/{workspace.url}/{ROBOFLOW_PROJECT}"
     SENT.write_text(f"{count} photos to {link} on {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC")
     print(f"Sent {count} photos with their pre-label boxes.")
@@ -202,7 +228,9 @@ if ROBOFLOW_VERSION:
 code(r"""
 # 4. Read the Roboflow YOLOv8 export, map classes, and split by garment (70/15/15).
 annotated = DATASET / "Annotated_Dataset"
-exports = sorted(annotated.glob("*.zip")) + sorted(p for p in annotated.glob("*") if p.is_dir()) if annotated.exists() else []
+# Oldest first: a later Roboflow version contains the earlier photos too, and its labels win.
+exports = sorted([p for p in annotated.glob("*") if p.suffix == ".zip" or p.is_dir()],
+                 key=lambda p: p.stat().st_mtime) if annotated.exists() else []
 if not exports:
     raise SystemExit("Part B needs the corrected Roboflow export (YOLOv8 format) in "
                      f"{annotated}. Label the photos first: docs/damage-annotation-guide.md.")
@@ -214,8 +242,9 @@ for export in exports:
     else:
         shutil.copytree(export, target)
 
-own = []   # (image path, label text)
-for yaml_path in src.rglob("data.yaml"):
+own = {}   # original name -> (image path, label text); later exports replace earlier ones
+order = {e.stem: i for i, e in enumerate(exports)}
+for yaml_path in sorted(src.rglob("data.yaml"), key=lambda y: order.get(y.relative_to(src).parts[0], 0)):
     names = []
     text = yaml_path.read_text()
     block = text.split("names:", 1)[1]
@@ -230,8 +259,10 @@ for yaml_path in src.rglob("data.yaml"):
         if image.suffix.lower() in SUFFIXES and image.parent.name == "images":
             label = image.parent.parent / "labels" / (image.stem + ".txt")
             text = label.read_text() if label.exists() else ""
-            own.append((image, v7.remap_label_lines(text, mapping)))
+            own[v7.original_name(image.name)] = (image, v7.remap_label_lines(text, mapping))
+own = list(own.values())
 assert own, "No labelled images found in the export."
+print("Labelled photos (after merging exports):", len(own))
 split = v7.split_by_garment([p.name for p, _ in own])
 
 DS = Path("/content/v7ds"); shutil.rmtree(DS, ignore_errors=True)
@@ -303,16 +334,18 @@ print("Current detector on our test garments:", json.dumps(baseline["own_test"][
 
 code(r"""
 # 6. Fine-tune from the current detector (resumes after a disconnect). 960 px helps small holes and slits.
-last = RUN / "train" / "weights" / "last.pt"
-best = RUN / "train" / "weights" / "best.pt"
-if best.exists() and (RUN / "train_done.txt").exists():
+# Each labelling round (a new number of labelled photos) gets its own run; reruns resume or skip it.
+TRAIN_NAME = f"train_{len(own)}"
+last = RUN / TRAIN_NAME / "weights" / "last.pt"
+best = RUN / TRAIN_NAME / "weights" / "best.pt"
+if best.exists() and (RUN / TRAIN_NAME / "done.txt").exists():
     print("Already trained:", best)
 else:
     model = YOLO(str(last)) if last.exists() else YOLO(str(BASE_WEIGHTS))
     model.train(data=str(DATA), epochs=80, patience=20, imgsz=960, batch=16, seed=42, deterministic=True,
-                project=str(RUN), name="train", exist_ok=True, resume=last.exists(), plots=True,
+                project=str(RUN), name=TRAIN_NAME, exist_ok=True, resume=last.exists(), plots=True,
                 close_mosaic=10, degrees=10, fliplr=0.5, flipud=0.2, hsv_h=0.02, hsv_s=0.5, hsv_v=0.4)
-    (RUN / "train_done.txt").write_text(datetime.now(timezone.utc).isoformat())
+    (RUN / TRAIN_NAME / "done.txt").write_text(datetime.now(timezone.utc).isoformat())
 """)
 
 code(r"""

@@ -30,6 +30,24 @@ class V7DetectorDataTest(unittest.TestCase):
         mapping = v7.roboflow_mapping(["Stain", "hole", "needle_mark", "wrinkle", "pilling"])
         self.assertEqual(mapping, {0: 3, 1: 0, 2: 1, 4: 2})
 
+    def test_round_names_and_original_names(self):
+        self.assertEqual(v7.round_zip_name(1), "v7_prelabels.zip")
+        self.assertEqual(v7.round_zip_name(3), "v7_prelabels_round3.zip")
+        self.assertEqual(v7.original_name("tshirt_001__holes__img_1_jpg.rf.abc123.jpg"), "tshirt_001__holes__img_1.jpg")
+        self.assertEqual(v7.online_name("Normal_Fabric", "IMG 5.png"), "online-normal-fabric-img_5.jpg")
+        self.assertTrue(v7.garment_of(v7.online_name("Holes", "a.jpg")).startswith("photo:"))
+
+    def test_newest_weights_prefers_the_latest_trained_detector(self):
+        import os, tempfile, time
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as run:
+            base = Path(run) / "base.pt"; base.write_bytes(b"x")
+            self.assertEqual(v7.newest_weights(run, base), base)
+            for i, name in enumerate(("train", "train_150")):
+                w = Path(run) / name / "weights"; w.mkdir(parents=True)
+                (w / "best.pt").write_bytes(b"x"); os.utime(w / "best.pt", (time.time() + i, time.time() + i))
+            self.assertEqual(v7.newest_weights(run, base), Path(run) / "train_150" / "weights" / "best.pt")
+
 
 if __name__ == "__main__":
     unittest.main()

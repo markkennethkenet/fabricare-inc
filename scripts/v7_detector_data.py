@@ -83,3 +83,28 @@ def roboflow_mapping(names):
         if key in APP_CLASSES:
             mapping[index] = APP_CLASSES.index(key)
     return mapping
+
+
+def online_name(folder, original_name):
+    """Name for an Online_Dataset photo: no "__", so each online photo is its own group when splitting."""
+    stem = original_name.rsplit(".", 1)[0]
+    return f"online-{safe(folder).replace('_', '-')}-{safe(stem)}.jpg"
+
+
+def original_name(file_name):
+    """A labelled photo's name before Roboflow renamed it ("x_jpg.rf.<hash>.jpg" -> "x.jpg")."""
+    stem = _ROBOFLOW.sub("", file_name.rsplit(".", 1)[0])
+    return f"{stem}.jpg"
+
+
+def round_zip_name(round_number):
+    """Pre-label zip for a labelling round; round 1 keeps the original name."""
+    return "v7_prelabels.zip" if round_number <= 1 else f"v7_prelabels_round{round_number}.zip"
+
+
+def newest_weights(run_dir, base_weights):
+    """The most recently trained V7 detector (RUN/train*/weights/best.pt), or the app's detector if none yet."""
+    from pathlib import Path
+
+    trained = [p for p in Path(run_dir).glob("train*/weights/best.pt") if p.is_file()]
+    return max(trained, key=lambda p: p.stat().st_mtime) if trained else Path(base_weights)

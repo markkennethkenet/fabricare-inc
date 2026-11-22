@@ -63,6 +63,20 @@ Run Part B. It fine-tunes the current detector on your labels (plus the public d
 garments** and reports precision, recall, mAP@0.5 and mAP@0.5:0.95 per class. Install the new detector only if it
 beats the old one on your own photos.
 
+## Label in rounds (less work each time)
+
+You do not need to label everything at once. Start with about 150-300 of the most useful photos (whole-garment
+phone photos, our T-shirts, printed garments without damage), then:
+
+1. Run Part B on that first batch. It trains a V7 detector (saved as `run_v7/train_<number of photos>`).
+2. Add the next photos to Drive (`Phone_Scans/<garment>/`) and rerun cell 3. It pre-labels **only photos not
+   pre-labelled or labelled before**, using the **newest V7 detector**, and saves `v7_prelabels_round2.zip`
+   (then `round3`, ...). Cell 3b sends that round to the same Roboflow project.
+3. Correct the new photos, generate a new Roboflow version, and fetch it with cell 3c. A new version contains the
+   earlier photos too; Part B merges the exports and keeps the newest labels for each photo, then trains a new run.
+
+Each round's detector boxes better than the last, so corrections get faster.
+
 ## Quick checklist
 
 - [ ] Classes named exactly `hole`, `needlemark`, `pilling`, `stain`
