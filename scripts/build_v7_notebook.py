@@ -32,6 +32,9 @@ slits. This notebook fine-tunes it on our own labelled photos. Follow `docs/dama
   `FabriCare_Damage_Dataset/Annotated_Dataset/`, fine-tunes the detector and tests the old and new detector on the
   same held-out garments: precision, recall, mAP@0.5, mAP@0.5:0.95 per class.
 
+**V7.1 adds discoloration** as a fifth class. Part B fine-tunes the newest V7 detector in `run_v7/` (so it keeps what
+V7 learned), compares old and new on the four shared classes, and reports discoloration on its own.
+
 **Run:** GPU runtime (L4 or T4) → *Runtime → Run all*. Part B stops with a message until the labels exist.
 """)
 
@@ -77,7 +80,8 @@ BASE_WEIGHTS = REPO / "model" / "best.pt"
 RUN.mkdir(parents=True, exist_ok=True)
 SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 base = YOLO(str(BASE_WEIGHTS))
-assert tuple(base.names[i] for i in range(len(base.names))) == v7.APP_CLASSES, base.names
+base_classes = tuple(base.names[i] for i in range(len(base.names)))
+assert v7.APP_CLASSES[:len(base_classes)] == base_classes, base.names   # older detectors lack the newest classes
 print("Base detector classes:", base.names)
 """)
 
@@ -333,13 +337,22 @@ if PUBLIC_ZIP.exists():
 else:
     print("Public dataset not on Drive; training on our photos only.")
 
-def yaml_for(name, train, val, test):
+def yaml_for(name, train, val, test, classes=v7.APP_CLASSES):
     path = DS / f"{name}.yaml"
-    path.write_text("names:\n" + "".join(f"  {i}: {n}\n" for i, n in enumerate(v7.APP_CLASSES)) +
+    path.write_text("names:\n" + "".join(f"  {i}: {n}\n" for i, n in enumerate(classes)) +
                     f"train: {json.dumps(train)}\nval: {json.dumps(str(val))}\ntest: {json.dumps(str(test))}\n")
     return path
 
 DATA = yaml_for("v7", train_dirs, DS / "own" / "valid" / "images", DS / "own" / "test" / "images")
+# The same test garments with only the four classes every detector has: a fair old-vs-new comparison.
+for kind in ("images", "labels"):
+    (DS / "own_core" / "test" / kind).mkdir(parents=True, exist_ok=True)
+for image in (DS / "own" / "test" / "images").iterdir():
+    shutil.copy2(image, DS / "own_core" / "test" / "images" / image.name)
+    label = DS / "own" / "test" / "labels" / (image.stem + ".txt")
+    (DS / "own_core" / "test" / "labels" / label.name).write_text(v7.core_label_lines(label.read_text()))
+CORE_DATA = yaml_for("v7_core", train_dirs, DS / "own_core" / "test" / "images", DS / "own_core" / "test" / "images",
+                     v7.CORE_CLASSES)
 PUBLIC_DATA = yaml_for("public", train_dirs, public_test, public_test) if public_test else None
 """)
 
@@ -360,22 +373,28 @@ def evaluate(weights, data, tag):
                "mAP50_95": float(m.box.map)}
     return {"overall": overall, "per_class": rows}
 
-baseline = {"own_test": evaluate(BASE_WEIGHTS, DATA, "baseline_own")}
+# Each labelling round and class set gets its own run. The detector to beat is the newest earlier run (the one in
+# the app), or the repository's detector before any V7 run.
+TRAIN_NAME = v7.run_name(len(own))
+CURRENT_WEIGHTS = v7.newest_weights(RUN, BASE_WEIGHTS, exclude=TRAIN_NAME)
+current_classes = tuple(YOLO(str(CURRENT_WEIGHTS)).names.values())
+COMPARE_DATA = DATA if current_classes == v7.APP_CLASSES else CORE_DATA
+print("Detector to beat:", CURRENT_WEIGHTS, current_classes)
+baseline = {"own_test": evaluate(CURRENT_WEIGHTS, COMPARE_DATA, "baseline_own")}
 if PUBLIC_DATA:
-    baseline["public_test"] = evaluate(BASE_WEIGHTS, PUBLIC_DATA, "baseline_public")
+    baseline["public_test"] = evaluate(CURRENT_WEIGHTS, PUBLIC_DATA, "baseline_public")
 print("Current detector on our test garments:", json.dumps(baseline["own_test"]["overall"], indent=1))
 """)
 
 code(r"""
 # 6. Fine-tune from the current detector (resumes after a disconnect). 960 px helps small holes and slits.
-# Each labelling round (a new number of labelled photos) gets its own run; reruns resume or skip it.
-TRAIN_NAME = f"train_{len(own)}"
+# A new class (discoloration) gets a new output layer; everything else starts from the current detector.
 last = RUN / TRAIN_NAME / "weights" / "last.pt"
 best = RUN / TRAIN_NAME / "weights" / "best.pt"
 if best.exists() and (RUN / TRAIN_NAME / "done.txt").exists():
     print("Already trained:", best)
 else:
-    model = YOLO(str(last)) if last.exists() else YOLO(str(BASE_WEIGHTS))
+    model = YOLO(str(last)) if last.exists() else YOLO(str(CURRENT_WEIGHTS))
     model.train(data=str(DATA), epochs=80, patience=20, imgsz=960, batch=16, seed=42, deterministic=True,
                 project=str(RUN), name=TRAIN_NAME, exist_ok=True, resume=last.exists(), plots=True,
                 close_mosaic=10, degrees=10, fliplr=0.5, flipud=0.2, hsv_h=0.02, hsv_s=0.5, hsv_v=0.4)
@@ -384,7 +403,8 @@ else:
 
 code(r"""
 # 7. Compare old and new detectors on the same test garments, then export.
-new = {"own_test": evaluate(best, DATA, "v7_own")}
+new = {"own_test": evaluate(best, COMPARE_DATA, "v7_own")}
+all_classes = evaluate(best, DATA, "v7_own_all") if COMPARE_DATA is not DATA else new["own_test"]
 if PUBLIC_DATA:
     new["public_test"] = evaluate(best, PUBLIC_DATA, "v7_public")
 
@@ -395,16 +415,17 @@ for key in new:
         print(f"{key:12s} {tag:10s} {o['precision']:9.3f} {o['recall']:7.3f} {o['mAP50']:7.3f} {o['mAP50_95']:9.3f}")
 print("\nPer class on our test garments (current → V7, mAP50):")
 for name in v7.APP_CLASSES:
-    a, b = baseline["own_test"]["per_class"].get(name), new["own_test"]["per_class"].get(name)
+    a, b = baseline["own_test"]["per_class"].get(name), all_classes["per_class"].get(name)
     if a or b:
-        print(f"  {name:10s} {a['mAP50'] if a else float('nan'):.3f} → {b['mAP50'] if b else float('nan'):.3f}"
+        print(f"  {name:13s} {a['mAP50'] if a else float('nan'):.3f} → {b['mAP50'] if b else float('nan'):.3f}"
               f"  ({(b or a)['boxes']} test boxes)")
 
 export = RUN / "export"; shutil.rmtree(export, ignore_errors=True); export.mkdir()
 shutil.copy2(best, export / "best.pt")
 report = {"created": datetime.now(timezone.utc).isoformat(), "classes": list(v7.APP_CLASSES),
           "split_counts": {s: dict(stats[s]) for s in v7.SPLITS}, "public_data": bool(PUBLIC_DATA),
-          "baseline": baseline, "v7": new, "train_image_size": 960,
+          "baseline": baseline, "v7": new, "v7_all_classes": all_classes, "train_image_size": 960,
+          "compared_classes": list(v7.CORE_CLASSES if COMPARE_DATA is CORE_DATA else v7.APP_CLASSES),
           "better_on_own_test": new["own_test"]["overall"]["mAP50"] > baseline["own_test"]["overall"]["mAP50"]}
 (export / "v7_detector_report.json").write_text(json.dumps(report, indent=2))
 archive = shutil.make_archive(str(RUN / "fabricare_v7_detector"), "zip", export)

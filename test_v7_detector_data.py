@@ -33,6 +33,23 @@ class V7DetectorDataTest(unittest.TestCase):
         mapping = v7.roboflow_mapping(["FabriCare-Fabric-Damage", "Hole", "Needle_Marks", "Normal", "Stain", "Needle Marks"])
         self.assertEqual(mapping, {1: 0, 2: 1, 4: 3, 5: 1})
 
+    def test_discoloration_is_the_fifth_class(self):
+        self.assertEqual(v7.APP_CLASSES[:4], v7.CORE_CLASSES)
+        self.assertEqual(v7.APP_CLASSES[4], "discoloration")
+        mapping = v7.roboflow_mapping(["discoloration", "hole", "needle_mark", "pilling", "stain"])
+        self.assertEqual(mapping, {0: 4, 1: 0, 2: 1, 3: 2, 4: 3})
+        self.assertEqual(v7.roboflow_mapping(["Discolouration"]), {0: 4})
+        # The public 6-class set has no discoloration, so its ids are unchanged.
+        self.assertEqual(v7.PUBLIC_TO_APP, {0: 0, 1: 1, 2: 2, 3: 3})
+
+    def test_core_labels_drop_discoloration_for_the_old_detector_comparison(self):
+        self.assertEqual(v7.core_label_lines("4 .5 .5 .2 .2\n0 .1 .1 .1 .1\n3 .3 .3 .1 .1\n"),
+                         "0 .1 .1 .1 .1\n3 .3 .3 .1 .1\n")
+        self.assertEqual(v7.core_label_lines("4 .5 .5 .2 .2\n"), "")
+
+    def test_run_names_separate_the_five_class_run(self):
+        self.assertEqual(v7.run_name(3014), "train_3014_5cls")
+
     def test_round_names_and_original_names(self):
         self.assertEqual(v7.round_zip_name(1), "v7_prelabels.zip")
         self.assertEqual(v7.round_zip_name(3), "v7_prelabels_round3.zip")
@@ -50,6 +67,8 @@ class V7DetectorDataTest(unittest.TestCase):
                 w = Path(run) / name / "weights"; w.mkdir(parents=True)
                 (w / "best.pt").write_bytes(b"x"); os.utime(w / "best.pt", (time.time() + i, time.time() + i))
             self.assertEqual(v7.newest_weights(run, base), Path(run) / "train_150" / "weights" / "best.pt")
+            # The run being trained is never its own baseline.
+            self.assertEqual(v7.newest_weights(run, base, exclude="train_150"), Path(run) / "train" / "weights" / "best.pt")
 
 
 if __name__ == "__main__":

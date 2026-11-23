@@ -36,7 +36,8 @@ Roboflow's free plan makes projects **public**; use a paid or education plan if 
 **Or upload by hand:** create an **Object Detection** project, download and unzip `v7_prelabels.zip`, and upload
 the folder (images plus YOLO `.txt` labels and `data.yaml`).
 
-1. Check the project has exactly these classes: `hole`, `needlemark`, `pilling`, `stain`. Keep the file names.
+1. Check the project has these classes: `hole`, `needlemark`, `pilling`, `stain`, and (since V7.1) `discoloration`.
+   Other spellings such as `needle_mark` are mapped automatically. Keep the file names.
 2. Open **Annotate** and fix every photo:
 
 | Class | Box it | Do not box |
@@ -44,7 +45,8 @@ the folder (images plus YOLO `.txt` labels and `data.yaml`).
 | **hole** | Every opening, tear or slit where fabric is missing or cut. **One box per hole**: a cluster of 8 small holes is 8 boxes. Box tightly around the opening. | Seams, folds, shadows, the gap between a sleeve and the floor, buttonholes |
 | **needlemark** | Small rows of needle punctures or pulled threads | Fabric texture, weave pattern |
 | **pilling** | Patches of fuzz balls; one box per patch | Normal fabric texture, lint you can brush off |
-| **stain** | Discoloured marks: food, oil, rust, sweat yellowing, dye bleeding | **Prints, logos, embroidery, patterns, shadows, wet spots, reflections** |
+| **stain** | Marks added to the fabric: food, oil, rust, sweat yellowing, dye bleeding | **Prints, logos, embroidery, patterns, shadows, wet spots, reflections** |
+| **discoloration** | Colour lost or changed: bleach spots, sun-faded or washed-out patches, uneven fading | Whole garments that are simply pale, shadows, lighting changes, prints |
 
 3. Delete every wrong pre-label box (most often: floor, prints, folds). Leave a photo with **no boxes** if it has no damage: these background photos matter.
 4. Every photo must be checked. An unchecked pre-label teaches the detector its own mistakes.
@@ -84,7 +86,7 @@ Each round's detector boxes better than the last, so corrections get faster.
 
 ## Quick checklist
 
-- [ ] Classes named exactly `hole`, `needlemark`, `pilling`, `stain`
+- [ ] Classes `hole`, `needlemark`, `pilling`, `stain`, `discoloration`
 - [ ] Each hole in a cluster has its own box
 - [ ] No boxes on prints, logos, floor, folds or shadows
 - [ ] Every photo reviewed, including those left empty

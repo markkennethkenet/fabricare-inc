@@ -2,7 +2,8 @@
 
     .venv-api/Scripts/python.exe scripts/install_v7_detector.py C:/path/to/fabricare_v7_detector(.zip) [--force]
 
-The export comes from docs/fabricare_v7_damage_detector_colab.ipynb. The current detector is kept as
+The export comes from docs/fabricare_v7_damage_detector_colab.ipynb. The replaced detector is kept as
+model/best_previous.pt and the very first one as
 model/best_before_v7.pt. Installation stops if the new detector did not beat the current one on the team's
 held-out garments, unless --force is given.
 """
@@ -16,7 +17,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = Path(os.environ.get("FABRICARE_MODEL_DIR", ROOT / "model"))
-APP_CLASSES = ("hole", "needlemark", "pilling", "stain")
+CORE_CLASSES = ("hole", "needlemark", "pilling", "stain")
+# Detectors the app accepts: the original four classes, or V7.1 with discoloration added as a fifth.
+ACCEPTED_CLASSES = (CORE_CLASSES, CORE_CLASSES + ("discoloration",))
 
 
 def unpack(source):
@@ -41,8 +44,8 @@ def main(source, force=False):
     from ultralytics import YOLO
 
     names = YOLO(str(weights)).names
-    if tuple(names[i] for i in range(len(names))) != APP_CLASSES:
-        raise RuntimeError(f"Detector classes {names} do not match {APP_CLASSES}.")
+    if tuple(names[i] for i in range(len(names))) not in ACCEPTED_CLASSES:
+        raise RuntimeError(f"Detector classes {names} are not one of {ACCEPTED_CLASSES}.")
     old, new = report["baseline"]["own_test"]["overall"], report["v7"]["own_test"]["overall"]
     print(f"Our test garments, mAP50: current {old['mAP50']:.3f} -> V7 {new['mAP50']:.3f}; "
           f"recall {old['recall']:.3f} -> {new['recall']:.3f}")
@@ -50,11 +53,15 @@ def main(source, force=False):
         raise SystemExit("V7 did not beat the current detector on our photos; not installed (use --force to override).")
     current = MODEL / "best.pt"
     backup = MODEL / "best_before_v7.pt"
-    if current.is_file() and not backup.is_file():
-        shutil.copy2(current, backup)
+    previous = MODEL / "best_previous.pt"   # the detector this install replaces (an earlier V7 on later rounds)
+    if current.is_file():
+        if not backup.is_file():
+            shutil.copy2(current, backup)
+        shutil.copy2(current, previous)
     shutil.copy2(weights, current)
     shutil.copy2(report_path, MODEL / "v7_detector_report.json")
-    print(f"Installed {current} (previous detector kept at {backup.name}). Restart the API to use it.")
+    print(f"Installed {current} (replaced detector kept at {previous.name}; the original at {backup.name}). "
+          "Restart the API to use it.")
 
 
 if __name__ == "__main__":

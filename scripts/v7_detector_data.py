@@ -1,6 +1,8 @@
 """Data handling for the V7 damage detector: pre-label naming, garment-grouped splits, and class mapping.
 
-The app's YOLOv8 detector predicts four classes in this order: hole, needlemark, pilling, stain. Photos the team
+The app's YOLOv8 detector predicts these classes in this order: hole, needlemark, pilling, stain, discoloration.
+Discoloration was added as the fifth class (V7.1), so the first four keep their ids and older 4-class detectors
+remain a prefix of APP_CLASSES. Photos the team
 labels in Roboflow keep a garment prefix in their file names ("tshirt_003__front__IMG_123.jpg"), which survives
 Roboflow's renaming ("tshirt_003__front__IMG_123_jpg.rf.<hash>.jpg"), so every photo of one garment can be kept
 in one split. Nothing here touches Drive or the network.
@@ -11,7 +13,8 @@ import hashlib
 import re
 from collections import Counter, defaultdict
 
-APP_CLASSES = ("hole", "needlemark", "pilling", "stain")
+APP_CLASSES = ("hole", "needlemark", "pilling", "stain", "discoloration")
+CORE_CLASSES = APP_CLASSES[:4]   # the classes every earlier detector has
 SPLITS = ("train", "valid", "test")
 TARGET = {"train": 0.7, "valid": 0.15, "test": 0.15}
 # The public 6-class set (docs/damage-yolov8-dataset.md): drop classes the app does not detect.
@@ -76,7 +79,8 @@ def remap_label_lines(text, mapping):
 def roboflow_mapping(names):
     """Map a Roboflow export's class list (any order, any case) onto APP_CLASSES; unknown classes are dropped."""
     aliases = {"needle_mark": "needlemark", "needle_marks": "needlemark", "needlemarks": "needlemark",
-               "holes": "hole", "stains": "stain", "pill": "pilling", "pills": "pilling"}
+               "holes": "hole", "stains": "stain", "pill": "pilling", "pills": "pilling",
+               "discolouration": "discoloration", "discolored": "discoloration", "discoloured": "discoloration"}
     mapping = {}
     for index, name in enumerate(names):
         key = "_".join(str(name).strip().lower().replace("-", " ").split())   # "Needle Marks" -> "needle_marks"
@@ -103,9 +107,24 @@ def round_zip_name(round_number):
     return "v7_prelabels.zip" if round_number <= 1 else f"v7_prelabels_round{round_number}.zip"
 
 
-def newest_weights(run_dir, base_weights):
-    """The most recently trained V7 detector (RUN/train*/weights/best.pt), or the app's detector if none yet."""
+def newest_weights(run_dir, base_weights, exclude=None):
+    """The most recently trained V7 detector (RUN/train*/weights/best.pt), or the app's detector if none yet.
+
+    exclude names a run folder to skip (the run being trained now), so it is never compared with itself.
+    """
     from pathlib import Path
 
-    trained = [p for p in Path(run_dir).glob("train*/weights/best.pt") if p.is_file()]
+    trained = [p for p in Path(run_dir).glob("train*/weights/best.pt")
+               if p.is_file() and p.parent.parent.name != exclude]
     return max(trained, key=lambda p: p.stat().st_mtime) if trained else Path(base_weights)
+
+
+def core_label_lines(text):
+    """YOLO label text keeping only CORE_CLASSES boxes, to compare against a detector without the newer classes."""
+    return remap_label_lines(text, {i: i for i in range(len(CORE_CLASSES))})
+
+
+def run_name(labelled_count):
+    """Training run folder: one per labelling round and class set (4-class runs keep their old names)."""
+    suffix = "" if len(APP_CLASSES) == len(CORE_CLASSES) else f"_{len(APP_CLASSES)}cls"
+    return f"train_{labelled_count}{suffix}"
