@@ -65,7 +65,7 @@ They were created in three steps:
 
 1. **Pick the risks worth a warning.** The care sources name the common ways laundry harms a garment: openings that tear further, stains that set, pilling that spreads, dyes that bleed, wool that felts, silk that water-marks, polyester damaged by high heat.
 2. **Tie each risk to a sign the scan can see.** Damage comes from the YOLOv8 detector, fabric from the CNN, and colour from the photo. Each alert names one clear action and a level: high (act before washing), medium (change how you wash), low (good to know).
-3. **Stop false alarms.** The detector's findings count only above a set score: hole 90%, stain 70%, pilling 70%, needle mark 60%. These were set from the V4 test run. At a 40% score the detector flagged holes on 35% of mostly undamaged photos; at 90% only 3.4%. Weaker findings stay on screen for the user to confirm or dismiss, and a confirmed finding always triggers its alert.
+3. **Stop false alarms.** The detector's findings count only above a set score: hole 60%, stain 70%, pilling 70%, needle mark 60%. These were set from the V4 test run. At a 40% score the detector flagged holes on 35% of mostly undamaged photos; at 90% only 3.4%. The hole threshold was later lowered from 90% to 60% after boxes lying mostly off the garment were filtered out, because at 90% real slits on phone photos never counted. Weaker findings stay on screen for the user to confirm or dismiss, and a confirmed finding always triggers its alert.
 
 | Alert | Level | Appears when | What it tells you | Source |
 | --- | --- | --- | --- | --- |

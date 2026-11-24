@@ -123,7 +123,7 @@ class ApiIntegrationTests(unittest.TestCase):
         facts = write.call_args.args[0]
         self.assertEqual(care["headline"], care_model.LAUNDRY_MODES["hand_wash_cold"])
         self.assertEqual(facts["laundry_mode_to_follow"], care["headline"])
-        self.assertEqual(facts["fabric"], "polyester (unconfirmed)")
+        self.assertEqual(facts["fabric"], "not identified")  # a rejected guess is not passed on
         self.assertIn("never suggest a different method", gemini_care.SYSTEM)
 
 

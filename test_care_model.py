@@ -32,13 +32,14 @@ def finding(kind, confidence=95, area=0.02):
 class CareFeatureTests(unittest.TestCase):
     def test_feature_row_covers_every_feature_in_order(self):
         values = row("cotton")
-        self.assertEqual(list(values), FEATURE_NAMES)
+        self.assertEqual(list(values)[:len(FEATURE_NAMES)], FEATURE_NAMES)
+        self.assertEqual(list(values)[len(FEATURE_NAMES):], ["discoloration_count", "discoloration_max_area"])
         self.assertEqual(care_model.feature_vector(values).shape, (1, len(FEATURE_NAMES)))
 
     def test_damage_counts_only_confident_or_confirmed_findings(self):
-        features = damage_features([finding("hole", 92, 0.03), finding("hole", 85, 0.5), finding("stain", 70, 0.1),
+        features = damage_features([finding("hole", 92, 0.03), finding("hole", 55, 0.5), finding("stain", 70, 0.1),
                                     finding("pilling", 65), {**finding("pilling", 30), "confirmed": True}])
-        self.assertEqual(features["hole_count"], 1)  # 85% is below the 90% hole threshold
+        self.assertEqual(features["hole_count"], 1)  # 55% is below the 60% hole threshold
         self.assertAlmostEqual(features["hole_max_area"], 0.03)
         self.assertEqual(features["stain_count"], 1)
         self.assertEqual(features["pilling_count"], 1)  # only the confirmed one
@@ -46,10 +47,28 @@ class CareFeatureTests(unittest.TestCase):
 
     def test_thresholds_match_the_detector_study(self):
         self.assertEqual(care_model.DAMAGE_MIN_CONFIDENCE,
-                         {"hole": 90.0, "stain": 70.0, "pilling": 70.0, "needlemark": 60.0})
+                         {"hole": 60.0, "stain": 70.0, "pilling": 70.0, "needlemark": 60.0,
+                          "discoloration": 60.0})
+        self.assertTrue(care_model.finding_counts("hole", 65))   # a real slit on a phone photo
+        self.assertFalse(care_model.finding_counts("hole", 59))
         self.assertTrue(care_model.finding_counts("hole", 20, confirmed=True))
         self.assertFalse(care_model.finding_counts("wrinkle", 99))
         self.assertFalse(care_model.finding_counts("stain", None))
+
+    def test_discoloration_drives_the_rules_but_not_the_model_features(self):
+        clean = row("cotton", color=(235, 230, 220))
+        faded = row("cotton", [finding("discoloration", 72, 0.08)], (235, 230, 220))
+        self.assertEqual(faded["discoloration_count"], 1)
+        self.assertNotIn("discoloration_count", FEATURE_NAMES)
+        self.assertTrue((care_model.feature_vector(faded) == care_model.feature_vector(clean)).all())
+        self.assertEqual(reference_laundry_mode(clean)[0], "machine_normal_warm")
+        self.assertEqual(reference_laundry_mode(faded)[0], "machine_gentle_cold")
+        self.assertIn("Colour change", [a["title"] for a in care_model.care_alerts(faded)])
+        self.assertTrue(any("bleach" in tip["text"] for tip in care_model.care_tips(faded)))
+        weak = row("cotton", [finding("discoloration", 45, 0.08)], (235, 230, 220))
+        self.assertEqual(weak["discoloration_count"], 0)   # below 60% it stays a finding to review
+        old_row = {k: v for k, v in clean.items() if not k.startswith("discoloration")}
+        self.assertEqual(care_model.care_alerts(old_row), care_model.care_alerts(clean))   # rows from before V7.1
 
     def test_colour_features_separate_dark_and_light(self):
         dark, light = color_features(png((20, 20, 30))), color_features(png((235, 230, 220)))
@@ -78,6 +97,9 @@ class ReferenceRuleTests(unittest.TestCase):
             (row("silk", [finding("stain")]), "professional_clean"),
             (row("wool", [finding("hole")]), "repair_first"),
             (row("uncertain"), "hand_wash_cold"),
+            # An unidentified fabric gets the gentlest method even when dark or pilled.
+            (row("uncertain", [finding("pilling")], color=(25, 25, 40)), "hand_wash_cold"),
+            (row("uncertain", [finding("hole")]), "repair_first"),
         ]
         for values, expected in cases:
             mode, reasons = reference_laundry_mode(values)

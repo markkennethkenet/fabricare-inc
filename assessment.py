@@ -32,10 +32,12 @@ REFERENCE_WEARS_PER_WASH = 3
 # The study's model explains about 22% of the variation in lifespan, so estimates are shown as a wide range.
 RANGE_LOW, RANGE_HIGH = 0.6, 1.4
 # FabriCare assumptions, not study figures: how visible damage shortens the remaining estimate.
-DAMAGE_LIFESPAN_FACTOR = {"hole": (0.75, None), "pilling": (0.9, 0.8), "stain": (0.95, 0.9), "needlemark": (0.98, 0.95)}
+DAMAGE_LIFESPAN_FACTOR = {"hole": (0.75, None), "pilling": (0.9, 0.8), "stain": (0.95, 0.9), "needlemark": (0.98, 0.95),
+                          "discoloration": (0.97, 0.95)}
 CONFIRMED_HOLE_MAX_MONTHS = 6
 # FabriCare visible-condition health score: points removed per finding type (candidate, confirmed).
-HEALTH_DEDUCTIONS = {"hole": (20, 40), "pilling": (10, 20), "stain": (8, 15), "needlemark": (5, 10)}
+HEALTH_DEDUCTIONS = {"hole": (20, 40), "pilling": (10, 20), "stain": (8, 15), "needlemark": (5, 10),
+                     "discoloration": (6, 12)}
 HEALTH_GRADES = ((85, "Excellent"), (70, "Good"), (50, "Fair"), (0, "Poor"))
 
 REFERENCES = {
@@ -63,6 +65,7 @@ SUPPORT = {
     "pilling": "Surface pills were marked. This describes appearance in the photographed area.",
     "stain": "A mark resembling a stain was identified. Its cause and effect on the fibers are unknown.",
     "needlemark": "A mark resembling a needle mark was identified. Its origin and effect on strength are unknown.",
+    "discoloration": "An area of faded or changed colour was marked. Its cause (bleach, sunlight, washing) is unknown.",
 }
 LABEL_FIELDS = {
     "wash": ("unknown", "conflicting", "professional_only", "dry_clean_only", "do_not_wash", "hand", "machine_normal",
@@ -172,6 +175,8 @@ def condition_for(detections, detector_available, reviewed, quality_limited, cov
         category = "Opening confirmed · repair check suggested"
     elif "pilling" in confirmed_types:
         category = "Surface pilling confirmed"
+    elif confirmed_types == {"discoloration"}:
+        category = "Colour change confirmed"
     elif confirmed_types:
         category = "Surface marks confirmed"
     elif pending:
@@ -230,9 +235,10 @@ def care_for(fabric_type, fabric_confidence, inputs, condition, fabric_threshold
         fiber = "wool"
     verified_wool = composition in {"100% wool", "100% merino wool"}
     predicted = fabric_type.casefold()
-    material = fiber or predicted
     needs_confirmation = (fabric_confidence is None or fabric_confidence < review_threshold(fabric_threshold)
                           or condition["quality_limited"] or predicted not in FABRIC_CONTEXT)
+    # A fibre the user entered counts; a photo guess that needs confirmation chooses no fabric-specific advice.
+    material = fiber or (None if needs_confirmation else predicted)
     conflicts = wash == "conflicting" or (wash == "dry_clean_only" and label["professional"] == "do_not_dry_clean")
     domestic = wash in WASHABLE and not conflicts
     restricted = conflicts or wash in RESTRICTED_WASH
@@ -260,11 +266,9 @@ def care_for(fabric_type, fabric_confidence, inputs, condition, fabric_threshold
     context = FABRIC_CONTEXT.get(material)
     if context and not (context[3] and restricted):
         action, reason, refs, _ = context
-        prefix = f"If this garment is {material}, " if not fiber and needs_confirmation else ""
         general.append(guidance(
-            prefix + (action[0].lower() + action[1:] if prefix else action), reason,
-            f"You entered {inputs['composition']} from the fiber label." if fiber else
-            f"The photo suggests {material}" + (" and the identification needs confirmation." if needs_confirmation else "."),
+            action, reason,
+            f"You entered {inputs['composition']} from the fiber label." if fiber else f"The photo suggests {material}.",
             refs, "General precaution. Use treatment limits established for this garment.",
         ))
     if domestic and material == "wool":
@@ -304,6 +308,15 @@ def care_for(fabric_type, fabric_confidence, inputs, condition, fabric_threshold
             "The best treatment depends on the type of stain, the fabric, and the garment instructions.",
             "You confirmed a stain." if "stain" in confirmed else "The detector marked a possible stain for you to check.",
             ["N", "G"],
+        ))
+    if "discoloration" in confirmed or "discoloration" in pending:
+        advice.append(guidance(
+            "Follow the professional-care instructions and point out the faded area." if restricted else
+            "Wash in cold water, inside out, without chlorine bleach, and dry it away from direct sun.",
+            "Heat, bleach and sunlight can fade dyes further; colder, shorter washes reduce colour change.",
+            "You confirmed a colour change." if "discoloration" in confirmed
+            else "The detector marked a possible colour change for you to check.",
+            ["Q", "G"],
         ))
     if "needlemark" in confirmed:
         advice.append(guidance("Check the marked area for loose threads before cleaning.",
@@ -499,6 +512,8 @@ def durability_and_outlook(condition, inputs, fabric_type="uncertain", today=Non
         concerns.append("Save a photo of the mark now and compare it after any cleaning established as suitable."
                         if wash_unknown else
                         "Photograph the mark after a label-compatible cleaning to see whether it persists.")
+    if "discoloration" in confirmed:
+        concerns.append("Rescan the faded area in the same light after a few washes to see whether the colour change spreads.")
     if frequent or practice == "rubbing or wringing":
         concerns.append("Repeated laundering adds opportunities for appearance change. Use a method established as suitable and compare the same area across scans."
                         if practice != "rubbing or wringing" else
@@ -535,7 +550,9 @@ def assess(fabric_type, detections, user_inputs=None, today=None, *, fabric_conf
     condition = condition_for(detections, detector_available, reviewed, quality_limited, coverage_limited)
     advice, laundry, risks, needs_confirmation = care_for(fabric_type, fabric_confidence, inputs, condition,
                                                           fabric_threshold)
-    lifespan, outlook = durability_and_outlook(condition, inputs, fabric_type, today)
+    # A fabric that needs confirmation does not set the lifespan baseline; the survey mean is used instead.
+    lifespan, outlook = durability_and_outlook(condition, inputs, "uncertain" if needs_confirmation else fabric_type,
+                                               today)
     health = health_assessment(condition)
     usage = [f"{name}: {inputs[field].replace('_', ' ')}"
              for field, name in (("condition", "Garment"), ("use_frequency", "Wear frequency"),

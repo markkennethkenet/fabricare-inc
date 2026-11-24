@@ -1,0 +1,17 @@
+{
+  "name": "ConvNeXt-Tiny damage condition (V6)",
+  "classes": [
+    "hole",
+    "needlemark",
+    "normal",
+    "pilling",
+    "stain",
+    "wrinkle"
+  ],
+  "validation_accuracy": 87.32,
+  "test_accuracy": 86.47,
+  "test_macro_f1": 0.8337,
+  "weights": "float16",
+  "inference": "mirror_average",
+  "input": "224x224 RGB, 0-255, gray (127) padding"
+}

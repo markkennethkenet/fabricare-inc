@@ -91,6 +91,9 @@ class _SmartCaptureScreenState extends State<SmartCaptureScreen>
   Offset? _focusPoint;
   Timer? _focusTimer;
 
+  /// True while the preview is too dark: the shutter stays disabled.
+  bool _tooDark = false;
+
   bool get _liveChecks => !kIsWeb;
   CaptureViewInfo get _info => CaptureViewInfo.of(widget.view);
 
@@ -236,7 +239,13 @@ class _SmartCaptureScreenState extends State<SmartCaptureScreen>
       final wasReady = _guidance?.ready ?? false;
       _readyFrames = guidance.ready ? _readyFrames + 1 : 0;
       if (guidance.ready && !wasReady) HapticFeedback.selectionClick();
-      if (mounted) setState(() => _guidance = guidance);
+      final tooDark = shutterLockedByDarkness(_tooDark, guidance);
+      if (mounted) {
+        setState(() {
+          _guidance = guidance;
+          _tooDark = tooDark;
+        });
+      }
       if (_autoCapture && _readyFrames >= _readyFramesForAutoCapture) {
         _capture();
       }
@@ -250,6 +259,10 @@ class _SmartCaptureScreenState extends State<SmartCaptureScreen>
   Future<void> _capture() async {
     final controller = _controller;
     if (_capturing || controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    if (_liveChecks && _tooDark) {
+      _explainTooDark();
       return;
     }
     setState(() => _capturing = true);
@@ -338,6 +351,15 @@ class _SmartCaptureScreenState extends State<SmartCaptureScreen>
     if (photo != null && mounted) {
       Navigator.of(context).pop(CapturedPhoto(photo.path));
     }
+  }
+
+  void _explainTooDark() {
+    HapticFeedback.heavyImpact();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(
+          content: Text('Too dark to take a photo. Turn on the light '
+              '(top right) or move to brighter light.')));
   }
 
   Future<void> _toggleTorch() async {
@@ -576,7 +598,14 @@ class _SmartCaptureScreenState extends State<SmartCaptureScreen>
                           progress: _autoCapture && _liveChecks ? progress : 0,
                           busy: _capturing,
                           ready: _guidance?.ready ?? false,
-                          onTap: ready && !_capturing ? _capture : null,
+                          tooDark: _liveChecks && _tooDark,
+                          onTap:
+                              ready && !_capturing && !(_liveChecks && _tooDark)
+                                  ? _capture
+                                  : null,
+                          onBlockedTap: ready && _liveChecks && _tooDark
+                              ? _explainTooDark
+                              : null,
                         ),
                         _RoundAction(
                           icon: _autoCapture
@@ -717,22 +746,29 @@ class _ShutterButton extends StatelessWidget {
   final double progress;
   final bool busy;
   final bool ready;
+  final bool tooDark;
   final VoidCallback? onTap;
+
+  /// Called when the disabled shutter is tapped, to say why it is locked.
+  final VoidCallback? onBlockedTap;
 
   const _ShutterButton({
     required this.progress,
     required this.busy,
     required this.ready,
     required this.onTap,
+    this.tooDark = false,
+    this.onBlockedTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Take photo',
+      enabled: onTap != null,
+      label: tooDark ? 'Take photo, disabled: too dark' : 'Take photo',
       child: GestureDetector(
-        onTap: onTap,
+        onTap: onTap ?? onBlockedTap,
         child: SizedBox(
           width: 84,
           height: 84,
@@ -758,8 +794,13 @@ class _ShutterButton extends StatelessWidget {
                       color: ready ? const Color(0xFF7FD08F) : Colors.white,
                       width: 3),
                 ),
-                child: Icon(Icons.camera_alt_rounded,
-                    color: ready ? const Color(0xFF2E6B3A) : AppColors.ink,
+                child: Icon(
+                    tooDark ? Icons.nightlight_round : Icons.camera_alt_rounded,
+                    color: tooDark
+                        ? Colors.black38
+                        : ready
+                            ? const Color(0xFF2E6B3A)
+                            : AppColors.ink,
                     size: 30),
               ),
             ],

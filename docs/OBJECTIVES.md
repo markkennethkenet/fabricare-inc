@@ -56,7 +56,8 @@ from retraining with retake-style augmentation: +4.8 points on clean test photos
 - **Limitation to state:** accuracy measures agreement with the referenced rules, not laboratory-verified
   care outcomes. A garment's care label always takes precedence in the app.
 - **Damage thresholds:** on the mostly undamaged V3 photos, the YOLOv8 detector reported holes on 35.1% of photos at a
-  40% score but 3.4% at 90%. Automatic care, health and lifespan effects therefore need hole ≥90%, stain ≥70%,
+  40% score but 3.4% at 90%. Hole boxes lying mostly off the garment (floor beside sleeves) are now filtered out, and at
+  90% real slits on phone photos never counted, so automatic care, health and lifespan effects need hole ≥60%, stain ≥70%,
   pilling ≥70% or needle mark ≥60% (`care_model.DAMAGE_MIN_CONFIDENCE`); weaker findings stay visible for the user
   to review, and confirmed findings always count. The detector itself (`model/best.pt`) is a short baseline and
   would benefit from retraining with more annotated damage.

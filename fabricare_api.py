@@ -43,6 +43,9 @@ DAMAGE_MODEL_PATH = BASE_DIR / "model" / "best.pt"
 FABRIC_CNN_DIR = BASE_DIR / "model" / "fabric_cnn"
 LEGACY_CNN_DIR = BASE_DIR / "model" / "mobilenetv2_6class"
 CARE_MODEL_PATH = BASE_DIR / "model" / "care" / "care_recommender.joblib"
+# V6: whole-photo condition classifier and the condition-aware care model (optional; used when present).
+CONDITION_MODEL_DIR = BASE_DIR / "model" / "damage_classifier"
+CARE_V6_PATH = BASE_DIR / "model" / "care_v6" / "care_recommender.joblib"
 
 
 def cnn_metadata():
@@ -187,11 +190,50 @@ def load_care_recommender():
         return care_model_cache["model"]
 
 
+condition_cache = {}
+
+
+def _load_once(key, path, factory):
+    with care_model_lock:
+        if key not in condition_cache:
+            try:
+                condition_cache[key] = factory(path) if path.exists() else None
+            except Exception:
+                app.logger.exception("Could not load %s", key)
+                condition_cache[key] = None
+        return condition_cache[key]
+
+
+def load_condition_classifier():
+    import condition_runtime
+    return _load_once("classifier", CONDITION_MODEL_DIR / "model_info.json",
+                      lambda _: condition_runtime.ConditionClassifier(CONDITION_MODEL_DIR))
+
+
+def load_condition_care():
+    import condition_runtime
+    return _load_once("care_v6", CARE_V6_PATH, condition_runtime.ConditionCareRecommender)
+
+
+def detect_condition(records):
+    """The V6 classifier's whole-photo condition for the front photo, or None when unavailable."""
+    classifier = load_condition_classifier()
+    if classifier is None:
+        return None
+    front = next((record for record in records if record["view"] == "front"), records[0])
+    try:
+        return {**classifier.classify(front["path"]), "view": front["view"], "experimental": True}
+    except Exception:
+        app.logger.exception("Condition classification failed")
+        return None
+
+
 IMAGE_CARE_FEATURES = tuple(name for name in care_model.FEATURE_NAMES
                             if not name.startswith("fabric_") and not name.endswith(("_count", "_max_area")))
 
 
-def ai_care_for(records, fabric_type, detections, user_inputs, *, fabric_confirmed=True, fabric_model=None):
+def ai_care_for(records, fabric_type, detections, user_inputs, *, fabric_confirmed=True, fabric_model=None,
+                condition=None):
     """Laundry-mode suggestion, care advice and automated care alerts from the fabric, condition and image."""
     front = next((record for record in records if record["view"] == "front"), records[0])
     try:
@@ -202,13 +244,28 @@ def ai_care_for(records, fabric_type, detections, user_inputs, *, fabric_confirm
         app.logger.exception("Care features could not be extracted")
         return {"status": "unavailable"}
     return ai_care_from_row(row, fabric_type, user_inputs, fabric_confirmed=fabric_confirmed,
-                            fabric_model=fabric_model, photo_path=front["path"])
+                            fabric_model=fabric_model, photo_path=front["path"], condition=condition)
 
 
-def ai_care_from_row(row, fabric_type, user_inputs, *, fabric_confirmed=True, fabric_model=None, photo_path=None):
+def ai_care_from_row(row, fabric_type, user_inputs, *, fabric_confirmed=True, fabric_model=None, photo_path=None,
+                     condition=None):
+    if not fabric_confirmed:
+        # A rejected fabric identification must not choose a fabric-specific wash mode, tip or alert.
+        row = {**row, **care_model.fabric_features("uncertain")}
+    condition_name = condition.get("condition") if isinstance(condition, dict) else None
+    v6_recommender = None
+    if condition_name:
+        import condition_runtime
+        # The classifier's condition counts as one finding for the referenced rules, tips and alerts.
+        row = condition_runtime.with_condition(row, condition_name)
+        if fabric_confirmed and fabric_type in care_model.FABRICS:
+            v6_recommender = load_condition_care()
     reference_mode, reasons = care_model.reference_laundry_mode(row)
-    recommender = load_care_recommender() if fabric_type in care_model.FABRICS else None
-    if recommender is not None:
+    recommender = load_care_recommender() if fabric_confirmed and fabric_type in care_model.FABRICS else None
+    if v6_recommender is not None:
+        prediction = v6_recommender.predict(condition_runtime.condition_row(row, fabric_type, condition_name))
+        status, model_name = "model_suggestion", f"{v6_recommender.name} (V6)"
+    elif recommender is not None:
         prediction = recommender.predict(row)
         status, model_name = "model_suggestion", recommender.name
     else:
@@ -247,6 +304,7 @@ def ai_care_from_row(row, fabric_type, user_inputs, *, fabric_confirmed=True, fa
         "note": ("Your entered care label takes priority over this suggestion." if label_entered
                  else "A suggestion from the scan. Check the garment's care label before washing."),
         "features": {name: round(value, 4) for name, value in row.items() if not name.startswith("fabric_")},
+        "condition": condition_name,
     }
 
 
@@ -329,7 +387,29 @@ def classify_fabric(image_path):
 def detect_damage(image_path, image_index=0, view="front"):
     # Ultralytics updates the shared predictor's options between passes.
     with damage_model_lock:
-        return _detect_damage(image_path, image_index, view)
+        detections = _detect_damage(image_path, image_index, view)
+    return on_garment_only(image_path, view, detections)
+
+
+def on_garment_only(image_path, view, detections):
+    """Drop boxes on a whole-garment photo that lie mostly on the floor or background, not on the garment."""
+    minimum = CONFIG["detection"].get("garment_minimum_overlap")
+    if not detections or not minimum or view not in {"front", "back"}:
+        return detections
+    import garment_mask
+    try:
+        outline = garment_mask.silhouette(cv2.imread(image_path))
+    except Exception:
+        app.logger.exception("Garment outline failed; keeping every finding")
+        return detections
+    if outline is None:
+        return detections
+    kept = []
+    for detection in detections:
+        share = garment_mask.share_on_garment(outline, detection["bbox"])
+        if share >= minimum:
+            kept.append({**detection, "on_garment": round(share, 3)})
+    return kept
 
 
 def _detect_damage(image_path, image_index, view):
@@ -430,7 +510,24 @@ def uploaded_views():
     return list(zip(views, files)), False
 
 
-def prepare_images(uploads, directory, *, validate_format=False, guide_framing=False):
+def no_fabric_check(quality, path):
+    """Fail the photo's quality check when it shows no fabric (a wall, a cupboard); scans refuse such photos."""
+    import fabric_presence
+    try:
+        presence = fabric_presence.check(path)
+    except ValueError:
+        raise
+    except Exception:
+        app.logger.exception("Fabric presence check failed")
+        return
+    quality["fabric_presence"] = presence
+    if not presence["fabric_detected"]:
+        quality["passed"] = False
+        quality["no_fabric"] = True
+        quality["reason"] = ". ".join(filter(None, [fabric_presence.NO_FABRIC_REASON, quality.get("reason")]))
+
+
+def prepare_images(uploads, directory, *, validate_format=False, guide_framing=False, check_fabric=False):
     records = []
     for index, (view, upload) in enumerate(uploads):
         path = str(Path(directory) / f"image_{index}.jpg")
@@ -444,6 +541,8 @@ def prepare_images(uploads, directory, *, validate_format=False, guide_framing=F
         quality = quality_for(image)
         if guide_framing:
             quality["framing_hint"] = framing_hint(image, view)
+        if check_fabric:
+            no_fabric_check(quality, path)
         records.append({"image_index": index, "view": view, "width": width,
                         "height": height, "quality": quality, "path": path})
     return records
@@ -481,7 +580,8 @@ def check_quality():
     try:
         uploads, _ = uploaded_views()
         with tempfile.TemporaryDirectory() as directory:
-            records = prepare_images(uploads, directory, validate_format=True, guide_framing=True)
+            records = prepare_images(uploads, directory, validate_format=True, guide_framing=True,
+                                     check_fabric=True)
             return jsonify({"per_image": [public_image(r) for r in records]})
     except RequestEntityTooLarge:
         raise
@@ -504,7 +604,13 @@ def analyze_upload(*, hybrid):
         except (ValueError, TypeError) as error:
             raise ValueError(f"Invalid garment history: {error}") from None
         with tempfile.TemporaryDirectory() as directory:
-            records = prepare_images(uploads, directory, validate_format=True)
+            records = prepare_images(uploads, directory, validate_format=True, check_fabric=True)
+            empty = [r["view"].replace("_", " ") for r in records if r["quality"].get("no_fabric")]
+            if empty:
+                # Not overridable: a photo without fabric cannot be identified or assessed.
+                return jsonify({"error": f"No fabric detected in the {', '.join(empty)} photo. "
+                                         "Retake it with the camera pointed at the garment's fabric.",
+                                "no_fabric": True, "per_image": [public_image(r) for r in records]}), 422
             failed_quality = any(not r["quality"]["passed"] for r in records)
             if failed_quality and (hybrid or not legacy) and request.form.get("allow_low_quality") != "true":
                 return jsonify({"error": "Review image quality and retake or continue anyway.",
@@ -540,9 +646,10 @@ def analyze_upload(*, hybrid):
                 coverage_limited=not all(record["damage_available"] for record in records),
             )
             metadata = scan_model_metadata(model_type, model)
+            condition = detect_condition(records)
             ai_care = ai_care_for(records, fabric["fabric_type"], merged, assessment["user_inputs"],
                                   fabric_confirmed=not assessment["fabric_needs_confirmation"],
-                                  fabric_model=metadata["fabric_model"])
+                                  fabric_model=metadata["fabric_model"], condition=condition)
             assessment["references"] = with_care_references(assessment["references"], ai_care)
             analysis = model_result(
                 {"fabric_type": fabric["fabric_type"], "confidence": fabric["fabric_confidence"],
@@ -555,6 +662,7 @@ def analyze_upload(*, hybrid):
                 "schema_version": 3, **fabric, "damages": merged, **metadata, **analysis, **assessment,
                 **({"fabric_second_opinion": opinion} if opinion is not None else {}),
                 "ai_care": ai_care,
+                **({"fabric_condition": condition} if condition is not None else {}),
                 "per_image": [public_image(record) for record in records], "quality_override": failed_quality,
                 "model_versions": {"fabric": metadata["fabric_model"],
                                    "damage": DAMAGE_MODEL_PATH.name if detector_available else None},
@@ -671,6 +779,7 @@ def home():
         "fabric_model": fabric_model_name,
         **fabric_model_metrics(),
         "damage_model": "YOLOv8" if damage_model is not None else None,
+        "condition_model": "ConvNeXt-Tiny damage condition (V6)" if (CONDITION_MODEL_DIR / "model_info.json").is_file() else None,
         "fabric_labels": fabric_labels,
         "damage_labels": damage_labels(),
         "runtime": {"python": platform.python_version(), "scikit_learn": sklearn.__version__},

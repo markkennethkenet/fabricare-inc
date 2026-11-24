@@ -115,7 +115,7 @@ def write_care_advice(facts, photo_path=None):
 def scan_facts(fabric_type, fabric_confirmed, laundry_mode_label, headline, row, user_inputs, care_tips,
                laundry_tips):
     """The scan results Gemini may use: what the models found, the user's details and the referenced tips."""
-    from care_model import DAMAGE_TYPES, is_dark_or_strong
+    from care_model import RULE_DAMAGE_TYPES, is_dark_or_strong
 
     label = {name: value for name, value in (user_inputs.get("care_label") or {}).items()
              if value not in (None, "unknown")}
@@ -124,11 +124,11 @@ def scan_facts(fabric_type, fabric_confirmed, laundry_mode_label, headline, row,
     # The headline, not the care model's raw mode, is what the card shows: it applies the care label and,
     # for an unconfirmed fabric, the gentlest wash. Gemini must not contradict it.
     return {
-        "fabric": fabric_type if fabric_confirmed else f"{fabric_type} (unconfirmed)",
+        "fabric": fabric_type if fabric_confirmed else "not identified",
         "laundry_mode_to_follow": headline,
         **({"care_model_suggestion_before_safety_checks": laundry_mode_label}
            if laundry_mode_label != headline else {}),
-        "damage_found": [kind for kind in DAMAGE_TYPES if row.get(f"{kind}_count", 0) > 0],
+        "damage_found": [kind for kind in RULE_DAMAGE_TYPES if row.get(f"{kind}_count", 0) > 0],
         "colour": ("dark or strongly coloured" if is_dark_or_strong(row)
                    else "light" if row.get("luminance_mean", 0) >= 170 else "medium"),
         "care_label_entered": label,
