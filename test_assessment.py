@@ -104,20 +104,38 @@ class AssessmentTests(unittest.TestCase):
         # Washing after every wear sits 1.128 brackets below the survey's average garment.
         self.assertAlmostEqual(months("weekly", "weekly") - months("weekly"), -0.792 * 1.128 * 12, delta=1)
 
-    def test_damage_lowers_health_and_caps_lifespan_after_a_confirmed_opening(self):
+    def test_damage_removes_its_ahp_weight_and_scales_the_lifespan(self):
+        from assessment import HEALTH_WEIGHTS
+
         today = date(2026, 11, 16)
         hole = [{"type": "hole", "confidence": 90, "area_ratio": 0.03}]
+        clean = assess("wool", [], {"condition": "new"}, today=today)
         candidate = assess("wool", hole, {"condition": "new"}, today=today)
         confirmed = assess("wool", hole, {"condition": "new"}, today=today, reviewed=True)
-        self.assertEqual(candidate["health_score"], 80)
-        self.assertEqual(confirmed["health_score"], 60)
-        self.assertEqual(confirmed["health_grade"], "Fair")
-        self.assertEqual(confirmed["lifespan"]["remaining_months"], 6)
-        self.assertTrue(any(f["source"] == "fabricare_assumption" for f in confirmed["lifespan"]["factors"]))
-        small = assess("cotton", [{"type": "stain", "confidence": 70, "area_ratio": 0.005}], today=today)
-        self.assertEqual(small["health_score"], round(100 - 8 * 0.7))
+        expected = round(100 * (1 - HEALTH_WEIGHTS["hole"]))
+        # A finding at or above its tested confidence level counts in full, confirmed or not.
+        for result in (candidate, confirmed):
+            self.assertEqual(result["health_score"], expected)
+            self.assertAlmostEqual(result["lifespan"]["remaining_months"],
+                                   clean["lifespan"]["remaining_months"] * expected / 100, delta=1)
+            self.assertTrue(any(f["source"] == "health_index" for f in result["lifespan"]["factors"]))
+        self.assertEqual(confirmed["health_assessment"]["deductions"][0]["provenance"], "user_reported")
+        # Each type counts once and the weights of the types present add up.
+        both = assess("cotton", [{"type": "stain", "confidence": 80, "area_ratio": 0.005},
+                                 {"type": "stain", "confidence": 90, "area_ratio": 0.2},
+                                 {"type": "pilling", "confidence": 85, "area_ratio": 0.1}], today=today)
+        self.assertEqual(both["health_score"], round(100 * (1 - HEALTH_WEIGHTS["stain"] - HEALTH_WEIGHTS["pilling"])))
         unavailable = assess("cotton", [], detector_available=False, today=today)
         self.assertIsNone(unavailable["health_score"])
+
+    def test_health_weights_come_from_the_config_and_sum_to_one(self):
+        from assessment import HEALTH_WEIGHTS, HEALTH_WEIGHTS_SOURCE
+
+        self.assertEqual(set(HEALTH_WEIGHTS), {"hole", "stain", "pilling", "needlemark"})
+        self.assertAlmostEqual(sum(HEALTH_WEIGHTS.values()), 1.0, places=3)
+        self.assertTrue(HEALTH_WEIGHTS_SOURCE)
+        result = assess("cotton", [{"type": "hole", "confidence": 90, "area_ratio": 0.05}])
+        self.assertEqual(result["health_assessment"]["weights_source"], HEALTH_WEIGHTS_SOURCE)
 
     def test_low_score_candidates_stay_for_review_without_changing_health_or_lifespan(self):
         today = date(2026, 11, 16)
@@ -129,8 +147,8 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(weak["lifespan"]["remaining_months"], clean["lifespan"]["remaining_months"])
         confirmed = assess("cotton", [{"type": "hole", "confidence": 50, "area_ratio": 0.05}],
                            {"condition": "new"}, today=today, reviewed=True)
-        self.assertEqual(confirmed["health_score"], 60)
-        self.assertEqual(confirmed["lifespan"]["remaining_months"], 6)
+        self.assertLess(confirmed["health_score"], 100)
+        self.assertLess(confirmed["lifespan"]["remaining_months"], clean["lifespan"]["remaining_months"])
 
     def test_only_supported_candidates_and_reviewed_observations(self):
         findings = [{"type": name, "area_ratio": .12, "confidence": 95}
@@ -159,9 +177,10 @@ class AssessmentTests(unittest.TestCase):
         observation, = candidate["condition_assessment"]["observations"]
         self.assertEqual(observation["type"], "discoloration")
         self.assertIn("faded or changed colour", observation["explanation"])
-        self.assertEqual(candidate["health_score"], 94)
-        self.assertEqual(confirmed["health_score"], 88)
-        self.assertLess(confirmed["lifespan"]["remaining_months"], clean["lifespan"]["remaining_months"])
+        # Discoloration is not one of the surveyed damage types, so it is reported but has no health weight.
+        self.assertEqual(candidate["health_score"], 100)
+        self.assertEqual(confirmed["health_score"], 100)
+        self.assertEqual(confirmed["lifespan"]["remaining_months"], clean["lifespan"]["remaining_months"])
         self.assertEqual(confirmed["condition_assessment"]["category"], "Colour change confirmed")
         for result in (candidate, confirmed):
             self.assertTrue(any("without chlorine bleach" in row["action"]
@@ -241,7 +260,9 @@ class AssessmentTests(unittest.TestCase):
         self.assertFalse(any("cotton" in row["action"].lower() for row in advice))
         self.assertTrue(any("fabric unconfirmed" in f["factor"] for f in result["lifespan"]["factors"]))
         self.assertFalse(result["laundry_settings"]["confirmed_settings"])
-        self.assertEqual(result["health_score"], round(100 - 8 * 0.7))
+        from assessment import HEALTH_WEIGHTS
+
+        self.assertEqual(result["health_score"], round(100 * (1 - HEALTH_WEIGHTS["stain"])))
         self.assertIsInstance(result["estimated_remaining_months"], int)
 
     def test_scenario_b_reviewed_pilling_and_wool_label_limits(self):

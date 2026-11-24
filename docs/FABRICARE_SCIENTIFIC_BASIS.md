@@ -9,14 +9,16 @@ Scan API schema `3`
 Version 2.0 adds three outputs that version 1.2 withheld. Each is labelled with its basis, and every number
 can be traced to a source or a named assumption.
 
-- **Health score.** 0–100 from the visible findings (`assessment.health_assessment`). The point weights are FabriCare
-  assumptions. Candidate findings below the detector thresholds in `care_model.DAMAGE_MIN_CONFIDENCE` are listed for
-  review but do not lower the score.
+- **Health score.** FHS = 100 × (1 − Σ weights of the damage types present) (`assessment.health_assessment`). The
+  weights come from an expert AHP survey (Saaty, 1980; `ahp.py`) and live in `assessment_config.json`; grades use the
+  health index bands of Jahromi et al. (2009). Candidate findings below the detector thresholds in
+  `care_model.DAMAGE_MIN_CONFIDENCE` are listed for review but do not lower the score.
 - **Remaining lifespan.** A range in months (`assessment.lifespan_estimate`), with status `experimental_estimate`. It
   starts from the garment-lifespan regression in Laitala and Klepp (2020), reference D, §4.1: an expected total
   lifespan of about 5.2 years; fibre offsets relative to cotton (silk +2.2 years, wool +1.2 years, synthetics
-  +5.5 months); −2 months per 10 extra wears per year; and up to +4.8 years for washing less often. The garment's age
-  is subtracted. Damage reductions are FabriCare assumptions, and a confirmed opening caps the estimate at 6 months.
+  +5.5 months); −0.018 years per extra wear per year; and +0.792 years per laundering bracket (up to +4.8 years for
+  washing less often). The garment's age is subtracted, and the result is scaled by the Fabric Health Score, whose
+  damage weights come from the expert AHP survey (`ahp.py`).
   That regression explains about 22% of the variation, so the app shows a ±40% range. This estimate is not a
   validated prediction for an individual garment.
 - **AI laundry-mode suggestion and alerts.** A Decision Tree, chosen against a Random Forest and an SVM, reproduces

@@ -15,6 +15,15 @@
     "minimum_brightness": 45,
     "maximum_brightness": 220
   },
+  "health_weights": {
+    "source": "Provisional: the earlier team weights rescaled to sum to 1. Replace with the expert AHP survey (python ahp.py responses.csv --write-config).",
+    "weights": {
+      "hole": 0.4706,
+      "stain": 0.1765,
+      "pilling": 0.2353,
+      "needlemark": 0.1176
+    }
+  },
   "input": {
     "maximum_images": 3,
     "maximum_upload_bytes": 20971520,

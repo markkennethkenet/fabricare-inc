@@ -24,7 +24,7 @@ void main() {
   });
 
   test('a fiber label outside the six fabrics is flagged unsupported', () {
-    final nylon = AnalyzeResponse({
+    const nylon = AnalyzeResponse({
       'fabric_type': 'polyester',
       'fabric_confidence': 91.0,
       'fabric': {'review_required': false, 'threshold_percent': 60},
@@ -37,7 +37,7 @@ void main() {
     });
     expect(nylon.fabricUnsupported, isTrue);
     // A low photo score alone only says the fabric may be unsupported.
-    final weak = AnalyzeResponse({
+    const weak = AnalyzeResponse({
       'fabric_type': 'polyester',
       'fabric_confidence': 41.0,
       'fabric': {'review_required': true, 'threshold_percent': 60},

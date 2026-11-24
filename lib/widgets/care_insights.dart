@@ -230,6 +230,7 @@ class LifespanEstimate extends StatelessWidget {
         'D' => 'Laitala & Klepp 2020',
         'user' => 'Your details',
         'fabricare_assumption' => 'FabriCare assumption',
+        'health_index' => 'Fabric Health Score',
         _ => '',
       };
 

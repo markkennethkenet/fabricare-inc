@@ -89,59 +89,57 @@ The trained Decision Tree picks the laundry mode from 24 scan features. The app 
 
 ## Fabric health score
 
-The health score starts at 100 and loses points once for each kind of damage found, more for damage the user confirmed. Small marks under 2% of the photo cost 30% less.
+The health score removes the AHP weight of each damage type present. The weights sum to 1, so the score stays between 0 and 100 without rescaling.
 
 ```latex
-\text{health} = \max\Big(0,\; \operatorname{round}\big(100 - \sum_{d \in \text{found}} p_d \times a_d\big)\Big), \qquad a_d = \begin{cases} 1.0 & \text{largest box} \ge 2\% \text{ of the photo} \\ 0.7 & \text{otherwise} \end{cases}
+\text{FHS} = \operatorname{round}\Big(100 \times \big(1 - \sum_{k} w_k\, x_k\big)\Big), \qquad x_k = \begin{cases} 1 & \text{damage type } k \text{ is present} \\ 0 & \text{otherwise} \end{cases}
 ```
 
-A damage type is found when the user confirmed it, or the detector's score reaches its threshold (hole 60%, stain 70%, pilling 70%, needle mark 60%). Weaker findings stay on screen for review and remove nothing. The hole threshold was lowered from 90% to 60% once boxes lying mostly off the garment were filtered out, because at 90% real slits on phone photos never counted.
+A damage type is present when the user confirmed it, or the detector's score reaches its threshold (hole 60%, stain 70%, pilling 70%, needle mark 60%). Weaker findings stay on screen for review and remove nothing. Each type counts once.
 
-| Damage type | Points if detected (p) | Points if confirmed (p) | Detector threshold |
+The weights w come from an expert survey analysed with the Analytic Hierarchy Process (Saaty, 1980), the method Benkirane et al. (2019) used to weight garment damage from consumer judgments. `ahp.py` computes each expert's weights and consistency ratio (accepted at CR ≤ 0.10), combines the accepted experts by the geometric mean of their judgments, and writes the result to `assessment_config.json` (`health_weights`). Until the survey is entered, the config holds provisional weights (the earlier team points rescaled to sum to 1):
+
+| Damage type | Provisional weight | Points removed | Detector threshold |
 | --- | --- | --- | --- |
-| Hole | 20 | 40 | 60% |
-| Pilling | 10 | 20 | 70% |
-| Stain | 8 | 15 | 70% |
-| Needle mark | 5 | 10 | 60% |
+| Hole | 0.4706 | 47.1 | 60% |
+| Pilling | 0.2353 | 23.5 | 70% |
+| Stain | 0.1765 | 17.6 | 70% |
+| Needle mark | 0.1176 | 11.8 | 60% |
 
-Grades: **Excellent** 85–100 · **Good** 70–84 · **Fair** 50–69 · **Poor** 0–49.
+Grades follow the health index bands of Jahromi et al. (2009): **Excellent** 85–100 · **Good** 70–84 · **Fair** 50–69 · **Poor** 0–49.
 
-**Worked example.** Denim with possible pilling at an 80% detector score, covering 3% of the photo: 100 − 10 × 1.0 = **90, Excellent**. If the user confirms the pilling: 100 − 20 = 80, Good. A confirmed hole as well: 80 − 40 = 40, Poor.
+**Worked example (provisional weights).** Denim with pilling at an 80% detector score: 100 × (1 − 0.2353) = **76, Good**. With a hole as well: 100 × (1 − 0.2353 − 0.4706) = 29, Poor.
 
-The point weights are FabriCare's own design, not taken from a study. The score describes only what the photos show, not fibre strength. The detector thresholds come from the V4 test run: at those levels the detector flagged holes on 3.4% of mostly undamaged photos, against 35.1% at a 40% score.
+The score describes only what the photos show, not fibre strength. The detector thresholds come from the V4 test run: at those levels the detector flagged stains on 4.2% and pilling on 5.0% of mostly undamaged photos, against 15.7% and 9.2% at a 40% score.
 
 ## Remaining lifespan estimate
 
 The lifespan estimate starts from how long garments last in a survey of 46,857 garments in five countries ([Laitala and Klepp 2020](https://doi.org/10.3390/su12219151), section 4.1). It adjusts for fibre, wear and washing, subtracts the garment's age, shortens the result for visible damage, and shows it as a range.
 
 ```latex
-R = \max\big(0,\; T_{\text{fibre}} + \tfrac{\Delta_{\text{wear}}}{12} + \Delta_{\text{wash}} - \text{age}\big) \times 12 \times \prod_{d \in \text{found}} f_d \quad \text{(months)}
-```
-
-```latex
-\text{shown range} = [\,0.6R,\; 1.4R\,], \qquad \text{confirmed hole} \Rightarrow R = \min(R,\, 6)
+R = 12 \times \max\big(0,\; T_{\text{fibre}} + \Delta_{\text{wear}} + \Delta_{\text{wash}} - \text{age}\big) \times \frac{\text{FHS}}{100} \quad \text{(months)}, \qquad \text{shown range} = [\,0.6R,\; 1.4R\,]
 ```
 
 | Term | How it is set | Source |
 | --- | --- | --- |
 | T fibre (years) | Cotton, denim, linen 4.91 · polyester 5.37 (+5.5 months) · wool 6.11 (+1.2 years) · silk 7.11 (+2.2 years) · unconfirmed fabric 5.2 (survey mean) | Survey |
-| Δ wear (months) | −2 × (wears per year − 52) / 10, kept between −24 and +12. Wears per year: rarely 12, weekly 52, several a week 156, daily 312 | Survey: 10 more wears a year ≈ 2 months shorter |
-| Δ wash (years) | B(n) − B(3), kept between −2 and +2, where n = wears between washes and B(n) = 4.8 × ln(min(n, 30)) / ln 30 | Survey: washing less often adds up to 4.8 years |
+| Δ wear (years) | −0.018 × (min(W, 156) − 52), W = wears per year: rarely 12, weekly 52, several a week 156, daily 312 (counted as 156, the survey's highest category) | Survey regression, final model |
+| Δ wash (years) | 0.792 × (b − 1.128), b = laundering bracket 0–6 (every wear, 2–3, 4–5, 6–10, 11–19, 20–29, 30+ wears per wash) | Survey regression; 1.128 = mean bracket in the survey |
 | Age (years) | From the purchase date; 0 if new; 2.6 (survey average) if unknown | User / survey |
-| f damage | Hole 0.75 · pilling 0.9 (confirmed 0.8) · stain 0.95 (0.9) · needle mark 0.98 (0.95) | FabriCare assumption |
-| Range 0.6R–1.4R | The survey's model explains about 22% of the variation between garments | Survey |
+| FHS / 100 | The Fabric Health Score scales the remaining time, as a condition-based health index ties a lower score to a shorter remaining life | Jahromi et al. (2009) |
+| Range 0.6R–1.4R | The survey's model explains about 22% of the variation between garments | Survey (width set by FabriCare) |
 
-**Worked example.** Denim worn weekly, washed after every wear, bought a year ago, possible pilling:
+**Worked example (provisional weights).** Denim worn weekly, washed after every wear, bought a year ago, pilling at an 80% score:
 
 1. Fibre baseline: 4.91 years = **59 months**.
 2. Wear weekly (52 a year): **0 months**.
-3. Washing after every wear (n = 1) instead of every 3 wears: 0 − 1.55 years = **−19 months** (40 months left).
-4. Age 1 year: **−12 months** (28.3 months left).
-5. Possible pilling × 0.9: **−3 months**.
+3. Washing after every wear (b = 0): 0.792 × (0 − 1.128) = −0.89 years = **−11 months**.
+4. Age 1 year: **−12 months** (36 months left).
+5. Fabric Health Score 76: 36 × 0.76 = 27.5, **−9 months**.
 
-Result: about **25 months**, shown as **15 to 36 months**.
+Result: about **28 months**, shown as **17 to 39 months**.
 
-The survey figures describe garments in general, so this is an estimate for planning, not a prediction for one garment. The damage factors and the 6-month cap for a confirmed hole are FabriCare's assumptions.
+The survey figures describe garments in general, so this is an estimate for planning, not a prediction for one garment.
 
 ## Objectives checklist
 

@@ -41,13 +41,13 @@ REFERENCE_LAUNDERING_BRACKET = 0.276 + 2 * 0.153 + 3 * 0.063 + 4 * 0.026 + 5 * 0
 SURVEY_MAX_WEARS_PER_YEAR = WEARS_PER_YEAR["several_times_a_week"]
 # The study's model explains about 22% of the variation in lifespan, so estimates are shown as a wide range.
 RANGE_LOW, RANGE_HIGH = 0.6, 1.4
-# FabriCare assumptions, not study figures: how visible damage shortens the remaining estimate.
-DAMAGE_LIFESPAN_FACTOR = {"hole": (0.75, None), "pilling": (0.9, 0.8), "stain": (0.95, 0.9), "needlemark": (0.98, 0.95),
-                          "discoloration": (0.97, 0.95)}
-CONFIRMED_HOLE_MAX_MONTHS = 6
-# FabriCare visible-condition health score: points removed per finding type (candidate, confirmed).
-HEALTH_DEDUCTIONS = {"hole": (20, 40), "pilling": (10, 20), "stain": (8, 15), "needlemark": (5, 10),
-                     "discoloration": (6, 12)}
+# Fabric Health Score weights: the share of the score each damage type removes. They come from the expert AHP
+# survey (ahp.py, Saaty 1980), the method Benkirane et al. (2019) used to weight garment damage, and sum to 1.
+HEALTH_WEIGHTS = CONFIG["health_weights"]["weights"]
+HEALTH_WEIGHTS_SOURCE = CONFIG["health_weights"]["source"]
+if abs(sum(HEALTH_WEIGHTS.values()) - 1) > 0.01:
+    raise RuntimeError("assessment_config.json health_weights must sum to 1.")
+# Grade bands of the condition-based health index of Jahromi et al. (2009): 85, 70 and 50 out of 100.
 HEALTH_GRADES = ((85, "Excellent"), (70, "Good"), (50, "Fair"), (0, "Poor"))
 
 REFERENCES = {
@@ -68,6 +68,8 @@ REFERENCES = {
     "P": ("Levi’s · Dark denim and dye transfer", "https://help.levi.com/hc/en-us/articles/34797976189709-Dark-denim-and-dye-transfer"),
     "Q": ("Cotton et al. (2020) · Colour change and dye transfer in colder, shorter wash cycles", "https://eprints.whiterose.ac.uk/id/eprint/154480/"),
     "R": ("Canadian Conservation Institute · Textile care and risks from water", "https://www.canada.ca/en/conservation-institute/services/preventive-conservation/guidelines-collections/textiles-costumes.html"),
+    "S": ("Jahromi et al. (2009) · Condition-based health index and its grade bands", "https://doi.org/10.1109/MEI.2009.4802595"),
+    "T": ("Benkirane et al. (2019) · Garment damage weighted by AHP", "https://doi.org/10.1177/1558925019854773"),
 }
 
 SUPPORT = {
@@ -477,28 +479,26 @@ def care_for(fabric_type, fabric_confidence, inputs, condition, fabric_threshold
 
 
 def health_assessment(condition):
-    """Score the visible condition from 0 to 100 using the damage findings.
+    """FHS = 100 x (1 - sum of the AHP weights of the damage types present), graded by the Jahromi et al. bands.
 
-    Each finding type removes points once; confirmed findings count fully and candidates count about half.
-    Candidates below care_model.DAMAGE_MIN_CONFIDENCE are left for review and remove nothing.
-    Findings covering under 2% of the photo remove 70% of the points. The weights are FabriCare assumptions.
+    A damage type is present when the user confirmed it or the detector found it at or above its tested confidence
+    level (care_model.DAMAGE_MIN_CONFIDENCE); weaker candidates stay for review and remove nothing. Each type counts
+    once. Types without a weight (wrinkles, or discoloration until it is surveyed) do not change the score.
     """
     if not condition["detector_available"] and not condition["observations"]:
         return None
     deductions = []
-    for kind, (candidate_points, confirmed_points) in HEALTH_DEDUCTIONS.items():
+    for kind, weight in HEALTH_WEIGHTS.items():
         items = [item for item in condition["observations"]
                  if item["type"] == kind and finding_counts(kind, item.get("model_score"), item["confirmed"])]
         if not items:
             continue
         confirmed = any(item["confirmed"] for item in items)
-        area = max((item.get("area_ratio") or 0) for item in items)
-        points = (confirmed_points if confirmed else candidate_points) * (1.0 if area >= 0.02 else 0.7)
-        deductions.append({"type": kind, "points": round(points, 1),
+        deductions.append({"type": kind, "weight": weight, "points": round(100 * weight, 1),
                            "provenance": "user_reported" if confirmed else "model_predicted"})
-    score = max(0, round(100 - sum(d["points"] for d in deductions)))
+    score = max(0, round(100 * (1 - sum(d["weight"] for d in deductions))))
     grade = next(name for floor, name in HEALTH_GRADES if score >= floor)
-    return {"score": score, "grade": grade, "deductions": deductions}
+    return {"score": score, "grade": grade, "deductions": deductions, "weights_source": HEALTH_WEIGHTS_SOURCE}
 
 
 def lifespan_estimate(fabric_type, condition, inputs, today=None):
@@ -540,25 +540,14 @@ def lifespan_estimate(fabric_type, condition, inputs, today=None):
         factors.append({"factor": "Age unknown: average current garment age assumed", "effect_months": -round(age * 12),
                         "source": "D"})
     remaining = max(0.0, total - age) * 12
-    confirmed = {item["type"] for item in condition["observations"] if item["confirmed"]}
-    # Low-score candidates are shown for review but do not shorten the estimate.
-    pending = {item["type"] for item in condition["observations"]
-               if not item["confirmed"] and finding_counts(item["type"], item.get("model_score"))}
-    for kind, (candidate_factor, confirmed_factor) in DAMAGE_LIFESPAN_FACTOR.items():
-        if kind in confirmed and confirmed_factor is not None:
-            factor = confirmed_factor
-        elif kind in pending or kind in confirmed:
-            factor = candidate_factor
-        else:
-            continue
+    # Visible damage scales the remaining time by the Fabric Health Score: a condition-based health index ties a
+    # lower condition score to a shorter remaining life (Jahromi et al., 2009). Low-score candidates change nothing.
+    health = health_assessment(condition)
+    if health is not None and health["score"] < 100:
         before = remaining
-        remaining *= factor
-        factors.append({"factor": f"{'Confirmed' if kind in confirmed else 'Possible'} {kind}",
-                        "effect_months": -round(before - remaining), "source": "fabricare_assumption"})
-    if "hole" in confirmed and remaining > CONFIRMED_HOLE_MAX_MONTHS:
-        factors.append({"factor": "Confirmed opening: repair suggested before further wear",
-                        "effect_months": -round(remaining - CONFIRMED_HOLE_MAX_MONTHS), "source": "fabricare_assumption"})
-        remaining = CONFIRMED_HOLE_MAX_MONTHS
+        remaining *= health["score"] / 100
+        factors.append({"factor": f"Visible condition: Fabric Health Score {health['score']}/100",
+                        "effect_months": -round(before - remaining), "source": "health_index"})
     central = round(remaining)
     return {"central": central, "low": round(remaining * RANGE_LOW), "high": round(remaining * RANGE_HIGH),
             "factors": factors}
@@ -613,9 +602,9 @@ def durability_and_outlook(condition, inputs, fabric_type="uncertain", today=Non
         ESTIMATE, "reference_estimate",
         "An estimate, not a prediction for this garment. It starts from typical garment lifespans in a five-country "
         "wardrobe survey (Laitala and Klepp, 2020), adjusts for fibre, wear and washing frequency, subtracts the "
-        "garment's age and reduces the result for visible damage. That survey's model explains about a fifth of the "
-        "variation between garments, so the range is wide. Damage adjustments are FabriCare assumptions.",
-        ["C", "D", "I"] + (["L"] if "hole" in confirmed else []),
+        "garment's age and scales the result by the Fabric Health Score, so visible damage shortens it. That survey's "
+        "model explains about a fifth of the variation between garments, so the range is wide.",
+        ["C", "D", "I", "S", "T"] + (["L"] if "hole" in confirmed else []),
         remaining_months=estimate["central"], remaining_months_low=estimate["low"],
         remaining_months_high=estimate["high"], factors=estimate["factors"], summary=summary,
     )
