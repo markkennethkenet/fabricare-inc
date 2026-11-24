@@ -20,6 +20,10 @@ web/dist/
 !scripts/build_web_vercel.sh
 !assessment.py
 !care_model.py
+!condition_runtime.py
+!damage_condition.py
+!fabric_presence.py
+!garment_mask.py
 !gemini_care.py
 !assessment_config.json
 !auth_routes.py

@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 import cv2
 import numpy as np
 import care_model
+import damage_condition
 from model_runtime import FabricDecisionTree
 
 class ApiContractTests(unittest.TestCase):
@@ -33,6 +34,28 @@ class ApiContractTests(unittest.TestCase):
         self.damage.start()
         self.addCleanup(self.fabric.stop)
         self.addCleanup(self.damage.stop)
+        # Synthetic test photos contain no real fabric; the presence check is faked like the other models.
+        self.presence = patch('fabric_presence.check', return_value={
+            'checked': True, 'fabric_detected': True, 'textile_score': 0.9})
+        self.presence_mock = self.presence.start()
+        self.addCleanup(self.presence.stop)
+
+    def test_photo_without_fabric_fails_quality_and_cannot_be_scanned(self):
+        self.presence_mock.return_value = {'checked': True, 'fabric_detected': False, 'textile_score': 0.02}
+        quality = self.client.post('/quality', data={'image': self.photo()}).get_json()['per_image'][0]['quality']
+        self.assertFalse(quality['passed'])
+        self.assertTrue(quality['no_fabric'])
+        self.assertTrue(quality['reason'].startswith('No fabric detected'))
+        # "Continue anyway" cannot override it.
+        response = self.client.post('/predict/hybrid', data={'image': self.photo(), 'allow_low_quality': 'true'})
+        self.assertEqual(response.status_code, 422)
+        self.assertTrue(response.get_json()['no_fabric'])
+        self.fabric_mock.assert_not_called()
+
+    def test_unavailable_presence_check_never_blocks(self):
+        self.presence_mock.return_value = {'checked': False, 'fabric_detected': True, 'textile_score': None}
+        response = self.client.post('/predict/hybrid', data={'image': self.photo()})
+        self.assertEqual(response.status_code, 200)
 
     def photo(self, dark=False):
         image = np.zeros((100, 100, 3), dtype=np.uint8) if dark else np.random.default_rng(7).integers(50, 200, (100, 100, 3), dtype=np.uint8)
@@ -95,15 +118,29 @@ class ApiContractTests(unittest.TestCase):
                 self.assertIsInstance(body['estimated_remaining_months'], int)
                 self.assertEqual(body['lifespan']['status'], 'experimental_estimate')
                 care = body['ai_care']
-                self.assertEqual(care['status'], 'model_suggestion')
-                self.assertEqual(care['model'], care_name)
-                self.assertTrue(0 < care['confidence'] <= 100)
+                if body['fabric_needs_confirmation']:
+                    # A fabric that needs confirmation never reaches the care model.
+                    self.assertEqual(care['status'], 'rule_based_guidance')
+                    self.assertIsNone(care['confidence'])
+                    source = 'FabriCare care rules'
+                else:
+                    self.assertEqual(care['status'], 'model_suggestion')
+                    # With the V6 condition classifier installed, the condition-aware care model answers.
+                    expected = care_name
+                    if 'fabric_condition' in body:
+                        self.assertIn(body['fabric_condition']['condition'], damage_condition.DAMAGE_CLASSES)
+                        self.assertEqual(care['condition'], body['fabric_condition']['condition'])
+                        v6 = json.loads((model_dir / 'v6_training_report.json').read_text(encoding='utf-8'))
+                        expected = f"{v6['selected_care_model']} (V6)"
+                    self.assertEqual(care['model'], expected)
+                    self.assertTrue(0 < care['confidence'] <= 100)
+                    source = f'{expected} care model'
                 self.assertIn(care['laundry_mode'], care_model.CLASSES)
                 self.assertTrue(care['label'] and care['reasons'])
                 self.assertIsInstance(care['alerts'], list)
                 self.assertTrue(1 <= len(care['care_tips']) <= 3 and 1 <= len(care['laundry_tips']) <= 3)
                 self.assertTrue(care['headline'])
-                self.assertEqual(care['provided_by'], f'{care_name} care model · {name} fabric result')
+                self.assertEqual(care['provided_by'], f'{source} · {name} fabric result')
                 cited = {ref for entry in care['reasons'] + care['alerts'] + care['care_tips'] + care['laundry_tips']
                          for ref in entry['reference_ids']}
                 self.assertTrue(cited <= {ref['id'] for ref in body['references']})
@@ -250,6 +287,23 @@ class ApiContractTests(unittest.TestCase):
                 self.assertEqual(self.client.post('/review-damage', json={**data, **bad}).status_code, 400)
         without = {key: value for key, value in data.items() if key != 'care_features'}
         self.assertNotIn('ai_care', self.client.post('/review-damage', json=without).get_json())
+
+    def test_rejected_fabric_withholds_fabric_specific_care(self):
+        features = {name: 0.5 for name in self.api.IMAGE_CARE_FEATURES}
+        features.update(luminance_mean=200.0, saturation_mean=0.05, dark_fraction=0.0)
+        data = {'fabric_type': 'wool', 'fabric_confidence': 55, 'fabric_review_threshold': 60,
+                'care_features': features, 'findings': [{'type': 'stain', 'area_ratio': .02, 'confirmed': True}]}
+        result = self.client.post('/review-damage', json=data).get_json()
+        self.assertTrue(result['fabric_needs_confirmation'])
+        care = result['ai_care']
+        self.assertEqual((care['status'], care['laundry_mode'], care['confidence']),
+                         ('rule_based_guidance', 'hand_wash_cold', None))
+        self.assertNotIn('Felting risk', {alert['title'] for alert in care['alerts']})
+        self.assertFalse(any('wool' in tip['text'].lower() for tip in care['care_tips'] + care['laundry_tips']))
+        self.assertTrue(any('fabric unconfirmed' in f['factor'] for f in result['lifespan']['factors']))
+        data['fabric_confidence'] = 75  # passes the 60% threshold
+        care = self.client.post('/review-damage', json=data).get_json()['ai_care']
+        self.assertIn('Felting risk', {alert['title'] for alert in care['alerts']})
 
     def test_partial_review_keeps_candidates_and_replaces_care(self):
         data = {"fabric_type": "cotton", "fabric_confidence": 62.5, "findings": [

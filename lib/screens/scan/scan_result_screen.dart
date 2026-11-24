@@ -496,6 +496,25 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                     HealthScoreBadge(health: health),
                   Text(result.healthRating,
                       style: const TextStyle(fontWeight: FontWeight.w600)),
+                  // V6 whole-photo condition classifier (experimental).
+                  if (result.section('fabric_condition') case final ai
+                      when ai['condition'] is String)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(children: [
+                        const Icon(Icons.auto_awesome_outlined,
+                            size: 16, color: AppColors.inkSoft),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                              'AI condition check: ${_display(ai['condition'])}'
+                              '${ai['confidence'] is num ? ' · ${(ai['confidence'] as num).round()}%' : ''}'
+                              ' (experimental)',
+                              style: const TextStyle(
+                                  fontSize: 13, color: AppColors.inkSoft)),
+                        ),
+                      ]),
+                    ),
                   if (condition['quality_limited'] == true ||
                       condition['coverage_limited'] == true)
                     const Padding(

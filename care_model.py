@@ -19,13 +19,22 @@ from PIL import Image, ImageOps
 
 FABRICS = ("cotton", "denim", "linen", "polyester", "silk", "wool")
 DAMAGE_TYPES = ("hole", "needlemark", "pilling", "stain")
+# Damage the care rules read. Discoloration (V7.1 detector) is not a model feature: the trained care models keep
+# the four types above, and a colour change reaches the advice through the rules below.
+RULE_DAMAGE_TYPES = DAMAGE_TYPES + ("discoloration",)
 GLCM_PROPERTIES = ("contrast", "dissimilarity", "homogeneity", "energy", "correlation", "ASM")
 # Detector score (percent) a finding needs before it changes care, health or lifespan on its own.
 # Chosen from the V4 run on the mostly undamaged V3 photos: at these levels the YOLOv8 detector flags
 # holes on 3.4% of photos, stains on 4.2%, pilling on 5.0% and needle marks on under 0.1%, against 35.1%,
 # 15.7%, 9.2% and 3.0% at a 40% score. Weaker findings remain visible for the user to review, and a
 # finding the user confirms always counts.
-DAMAGE_MIN_CONFIDENCE = {"hole": 90.0, "stain": 70.0, "pilling": 70.0, "needlemark": 60.0}
+# Hole lowered from 90% to 60% (Nov 2026): at 90% real slits on phone photos of damaged garments (scored 65-84%)
+# never counted, so badly holed garments scored "Excellent". Most low-score hole boxes were floor beside sleeves
+# and hems, which the garment-outline filter (garment_mask.py) now removes from front and back photos. At 60% the
+# V5 run flagged holes on 31% of mostly undamaged photos before that filter, so expect some false "possible
+# opening" results until the V7 detector is retrained on our own photos.
+# Discoloration (V7.1, Nov 2026) starts at 60%: it has the fewest training boxes, so its scores run lower.
+DAMAGE_MIN_CONFIDENCE = {"hole": 60.0, "stain": 70.0, "pilling": 70.0, "needlemark": 60.0, "discoloration": 60.0}
 
 
 def finding_counts(kind, confidence, confirmed=False):
@@ -65,7 +74,7 @@ CLASSES = tuple(LAUNDRY_MODES)
 
 
 def _detections_by_type(detections):
-    grouped = {kind: [] for kind in DAMAGE_TYPES}
+    grouped = {kind: [] for kind in RULE_DAMAGE_TYPES}
     for detection in detections or []:
         kind = detection.get("type")
         if kind in grouped and finding_counts(kind, detection.get("confidence"), detection.get("confirmed") is True):
@@ -75,10 +84,13 @@ def _detections_by_type(detections):
 
 
 def damage_features(detections):
-    """Count and largest box share of each damage type that passes DAMAGE_MIN_CONFIDENCE."""
+    """Count and largest box share of each damage type that passes DAMAGE_MIN_CONFIDENCE.
+
+    Includes discoloration for the care rules; feature_vector only uses FEATURE_NAMES.
+    """
     grouped = _detections_by_type(detections)
     features = {}
-    for kind in DAMAGE_TYPES:
+    for kind in RULE_DAMAGE_TYPES:
         areas = grouped[kind]
         features[f"{kind}_count"] = float(len(areas))
         features[f"{kind}_max_area"] = float(max(areas)) if areas else 0.0
@@ -118,15 +130,23 @@ def fabric_features(fabric_type):
 
 def feature_row(fabric_type, damage, color, glcm):
     """Combine feature groups into one dictionary covering FEATURE_NAMES."""
-    row = {**fabric_features(fabric_type), **damage, **color, **glcm}
-    missing = [name for name in FEATURE_NAMES if name not in row]
+    values = {**fabric_features(fabric_type), **damage, **color, **glcm}
+    missing = [name for name in FEATURE_NAMES if name not in values]
     if missing:
         raise ValueError(f"Missing care features: {', '.join(missing)}")
+    # Model features first, in order; rule-only values (discoloration) follow.
+    row = {name: values[name] for name in FEATURE_NAMES}
+    row.update((name, value) for name, value in values.items() if name not in row)
     return row
 
 
 def feature_vector(row):
     return np.asarray([[row[name] for name in FEATURE_NAMES]], dtype=np.float64)
+
+
+def has_discoloration(row):
+    """True when the scan found a colour change (rows built before V7.1 have no discoloration count)."""
+    return row.get("discoloration_count", 0) > 0
 
 
 def is_dark_or_strong(row):
@@ -143,6 +163,9 @@ def reference_laundry_mode(row):
     has = {kind: row[f"{kind}_count"] > 0 for kind in DAMAGE_TYPES}
     if has["hole"]:
         return "repair_first", [("An opening was detected. Pulling and agitation can enlarge it.", ["I", "L"])]
+    if fabric is None:
+        # Training rows always name a fabric; this covers scans whose fabric identification was rejected.
+        return "hand_wash_cold", [("The fabric is unidentified, so the gentlest method is suggested.", ["E", "G"])]
     if fabric == "silk":
         if has["stain"]:
             return "professional_clean", [
@@ -160,11 +183,11 @@ def reference_laundry_mode(row):
                         ["Q", "G"]))
     if has["pilling"]:
         reasons.append(("Pilling was detected: a gentle cycle reduces friction.", ["B", "J"]))
+    if has_discoloration(row):
+        reasons.append(("A colour change was detected: cooler, gentler washes limit further colour loss.", ["Q", "G"]))
     if reasons:
         return "machine_gentle_cold", reasons
-    if fabric in {"cotton", "linen"}:
-        return "machine_normal_warm", [(f"Light-coloured {fabric} tolerates a normal warm wash.", ["M", "G"])]
-    return "hand_wash_cold", [("The fabric is unidentified, so the gentlest method is suggested.", ["E", "G"])]
+    return "machine_normal_warm", [(f"Light-coloured {fabric} tolerates a normal warm wash.", ["M", "G"])]
 
 
 def care_alerts(row):
@@ -184,6 +207,9 @@ def care_alerts(row):
         alert("medium", "Pilling", "Wash inside out on a gentle cycle and reduce rubbing on the area.", ["B", "J"])
     if row["needlemark_count"] > 0:
         alert("low", "Needle-like mark", "Check the area for loose threads before cleaning.", ["A", "L"])
+    if has_discoloration(row):
+        alert("medium", "Colour change", "Avoid bleach and hot water; wash cool and dry it out of direct sun.",
+              ["Q", "R", "G"])
     if is_dark_or_strong(row):
         alert("medium", "Colour may bleed", "Wash dark or bright items separately in cool water.", ["Q", "G"])
     if fabric == "wool":
@@ -258,6 +284,9 @@ def care_tips(row, inputs=None, fabric_confirmed=True):
         add(85, "Remove the pills with a fabric shaver once it is dry, and wash it inside out.", ["B", "J"])
     if has["needlemark"]:
         add(80, "Check the marked spot for loose threads and secure them before cleaning.", ["A", "L"])
+    if has_discoloration(row):
+        add(83, "Keep bleach and strong stain removers off the faded area, and dry it in the shade; both fade colour "
+            "further.", ["Q", "R", "G"])
     if inputs.get("laundering_practice") == "rubbing or wringing":
         add(78, "Press water out gently instead of wringing; twisting and rubbing strain the fibres.", ["J", "R"])
     if dark and fabric != "denim":  # the denim tips below already cover dye
@@ -305,7 +334,7 @@ def laundry_tips(row, laundry_mode, inputs=None, fabric_confirmed=True):
     if not fabric_confirmed and mode not in {"repair_first", "professional_clean"}:
         mode = "hand_wash_cold"
     cold = mode in {"machine_gentle_cold", "hand_wash_cold", "repair_first"}
-    inside_out = dark or fabric == "denim" or row["pilling_count"] > 0
+    inside_out = dark or fabric == "denim" or row["pilling_count"] > 0 or has_discoloration(row)
     tips = []
 
     def add(text, refs):

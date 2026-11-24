@@ -55,6 +55,31 @@ void main() {
         GuidanceIssue.tooBright);
   });
 
+  test('the shutter locks in the dark and unlocks only in clearly better light',
+      () {
+    CaptureGuidance at(double brightness, GuidanceIssue issue) =>
+        CaptureGuidance(
+            issue: issue,
+            message: '',
+            grid: const [],
+            brightness: brightness,
+            sharpness: 50);
+    const limit = GuidanceThresholds.minBrightness;
+    expect(
+        shutterLockedByDarkness(false, at(30, GuidanceIssue.tooDark)), isTrue);
+    // Just above the limit: still locked once locked, open if never locked.
+    expect(shutterLockedByDarkness(true, at(limit + 2, GuidanceIssue.none)),
+        isTrue);
+    expect(shutterLockedByDarkness(false, at(limit + 2, GuidanceIssue.none)),
+        isFalse);
+    expect(shutterLockedByDarkness(true, at(limit + 10, GuidanceIssue.moving)),
+        isFalse);
+    // A real dark frame from the analyser locks it.
+    final dark = analyze(
+        frame(background: 20, fabric: (0, 0, 1, 1), fabricLevel: 25), 'front');
+    expect(shutterLockedByDarkness(false, dark), isTrue);
+  });
+
   test('a small garment on a plain background asks the user to move closer',
       () {
     final result = analyze(frame(fabric: (0.4, 0.4, 0.6, 0.6)), 'front');

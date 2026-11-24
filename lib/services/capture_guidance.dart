@@ -122,6 +122,21 @@ class GuidanceThresholds {
   static const minFill = 0.38;
   static const maxSpill = 0.45;
   static const closeUpMaxSpread = 44.0;
+
+  /// Extra brightness needed before a dark-locked shutter unlocks again.
+  static const darkUnlockMargin = 6.0;
+}
+
+/// Whether the shutter stays locked because the scene is too dark.
+///
+/// Locks as soon as a frame is too dark, and unlocks only once the scene is a
+/// little brighter than the limit, so the button does not flicker when the
+/// light sits right at the threshold.
+bool shutterLockedByDarkness(bool wasLocked, CaptureGuidance guidance) {
+  if (guidance.issue == GuidanceIssue.tooDark) return true;
+  if (!wasLocked) return false;
+  return guidance.brightness <
+      GuidanceThresholds.minBrightness + GuidanceThresholds.darkUnlockMargin;
 }
 
 const _gridWidth = 40;

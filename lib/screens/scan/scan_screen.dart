@@ -291,6 +291,27 @@ class _ScanScreenState extends State<ScanScreen> {
           .where((q) => (q['quality'] as Map)['passed'] != true)
           .toList();
       var override = false;
+      // A photo without fabric (a wall, a cupboard) cannot be scanned at all.
+      final noFabric =
+          failures.where((q) => (q['quality'] as Map)['no_fabric'] == true);
+      if (noFabric.isNotEmpty) {
+        setState(() => _stage = null);
+        await showDialog<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+                  icon: const Icon(Icons.texture_rounded),
+                  title: const Text('No fabric detected'),
+                  content: Text(
+                      '${noFabric.map((q) => _viewTitle(q['view'] as String)).join(', ')}: '
+                      'point the camera at the garment so its fabric fills the frame, then retake the photo.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Retake photos')),
+                  ],
+                ));
+        return;
+      }
       if (failures.isNotEmpty) {
         setState(() => _stage = null);
         override = await showDialog<bool>(
@@ -324,16 +345,47 @@ class _ScanScreenState extends State<ScanScreen> {
           modelType: _modelType,
           userInputs: _userInputs);
       if (!mounted) return;
-      if ((response.json['fabric_needs_confirmation'] == true ||
-              response.fabricType == 'uncertain') &&
+      final canAddView =
+          images.length == _requestedViews && _requestedViews < 3;
+      if (response.fabricRejected) {
+        // Below the fabric threshold: ask for a better photo and save nothing.
+        final nextView = canAddView ? _views[_requestedViews] : null;
+        setState(() => _stage = null);
+        final addPhoto = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.help_outline_rounded),
+            title: const Text('Fabric not identified'),
+            content: Text([
+              response.rejectionMessage,
+              'Retake the photo in brighter, even light, close enough to show the weave.',
+              if (nextView == 'back')
+                'Or add the back of the same garment.'
+              else if (nextView == 'close_up')
+                'Or add a sharp close-up of the main fabric, away from labels.',
+              'This scan was not saved.',
+            ].join('\n\n')),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Retake photos')),
+              if (nextView != null)
+                FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Add next photo')),
+            ],
+          ),
+        );
+        if (mounted && addPhoto == true) setState(() => _requestedViews++);
+        return;
+      }
+      if (response.json['fabric_needs_confirmation'] == true &&
           !override &&
-          images.length == _requestedViews &&
-          _requestedViews < 3) {
+          canAddView) {
         final nextView = _views[_requestedViews];
-        final guess = response.fabricType == 'uncertain'
-            ? null
-            : '${response.fabricType[0].toUpperCase()}${response.fabricType.substring(1)}'
-                '${response.fabricConfidence == null ? '' : ' · ${response.fabricConfidence!.round()}%'}';
+        final guess =
+            '${response.fabricType[0].toUpperCase()}${response.fabricType.substring(1)}'
+            '${response.fabricConfidence == null ? '' : ' · ${response.fabricConfidence!.round()}%'}';
         setState(() => _stage = null);
         final addPhoto = await showDialog<bool>(
           context: context,
@@ -343,7 +395,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 : Icons.zoom_in_rounded),
             title: const Text('One more photo?'),
             content: Text([
-              if (guess != null) 'Best guess: $guess.',
+              'Best guess: $guess.',
               nextView == 'back'
                   ? 'Add the back of the same garment in even light to confirm.'
                   : 'Add a sharp close-up of the main fabric, away from labels.',

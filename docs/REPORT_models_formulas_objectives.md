@@ -41,7 +41,7 @@ The trained Decision Tree picks the laundry mode from 24 scan features. The app 
 **1. Features (24 per scan)**
 
 - Fabric from the CNN, one-hot (6): cotton, denim, linen, polyester, silk, wool.
-- Damage (8): for hole, needle mark, pilling and stain, the count and the largest box share of the photo. A finding counts only if its detector score reaches the threshold (hole 90%, stain 70%, pilling 70%, needle mark 60%) or the user confirmed it.
+- Damage (8): for hole, needle mark, pilling and stain, the count and the largest box share of the photo. A finding counts only if its detector score reaches the threshold (hole 60%, stain 70%, pilling 70%, needle mark 60%) or the user confirmed it.
 - Colour of the central 80% of the front photo (4): mean luminance (0–255), luminance spread, mean saturation (0–1), share of dark pixels (luminance under 70).
 - GLCM texture (6): contrast, dissimilarity, homogeneity, energy, correlation and ASM, each averaged over 3 distances and 4 angles.
 
@@ -95,11 +95,11 @@ The health score starts at 100 and loses points once for each kind of damage fou
 \text{health} = \max\Big(0,\; \operatorname{round}\big(100 - \sum_{d \in \text{found}} p_d \times a_d\big)\Big), \qquad a_d = \begin{cases} 1.0 & \text{largest box} \ge 2\% \text{ of the photo} \\ 0.7 & \text{otherwise} \end{cases}
 ```
 
-A damage type is found when the user confirmed it, or the detector's score reaches its threshold (hole 90%, stain 70%, pilling 70%, needle mark 60%). Weaker findings stay on screen for review and remove nothing.
+A damage type is found when the user confirmed it, or the detector's score reaches its threshold (hole 60%, stain 70%, pilling 70%, needle mark 60%). Weaker findings stay on screen for review and remove nothing. The hole threshold was lowered from 90% to 60% once boxes lying mostly off the garment were filtered out, because at 90% real slits on phone photos never counted.
 
 | Damage type | Points if detected (p) | Points if confirmed (p) | Detector threshold |
 | --- | --- | --- | --- |
-| Hole | 20 | 40 | 90% |
+| Hole | 20 | 40 | 60% |
 | Pilling | 10 | 20 | 70% |
 | Stain | 8 | 15 | 70% |
 | Needle mark | 5 | 10 | 60% |

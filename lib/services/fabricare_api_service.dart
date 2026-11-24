@@ -23,6 +23,31 @@ class AnalyzeResponse {
   String get fabricType => json['fabric_type'] as String;
   double? get fabricConfidence =>
       (json['fabric_confidence'] as num?)?.toDouble();
+  Map<String, dynamic> get _fabric => json['fabric'] is Map
+      ? Map<String, dynamic>.from(json['fabric'] as Map)
+      : const {};
+
+  /// The fabric score is below the model's threshold or the fabric is unknown.
+  /// Such a scan is not saved; the user is asked for a better photo instead.
+  bool get fabricRejected =>
+      fabricType == 'uncertain' || _fabric['review_required'] == true;
+
+  /// Why [fabricRejected] holds, for the retake prompt.
+  String get rejectionMessage {
+    final score = fabricConfidence;
+    if (fabricType == 'uncertain' || score == null) {
+      return 'FabriCare could not identify the fabric from these photos.';
+    }
+    final name = fabricType.isEmpty
+        ? fabricType
+        : '${fabricType[0].toUpperCase()}${fabricType.substring(1)}';
+    final threshold = _fabric['threshold_percent'] as num?;
+    // Round down, so a 59.6% score never reads as meeting a 60% threshold.
+    return threshold == null
+        ? 'Best guess: $name at ${score.floor()}%, too low to identify it.'
+        : 'Best guess: $name at ${score.floor()}%, below the '
+            '${threshold.round()}% needed to identify it.';
+  }
   DamageDetectionResult toDamageDetectionResult() =>
       DamageDetectionResult.fromJson(json['damages'] as List? ?? []);
   ScanResult toScanResult(List<ScanImage> images, String userId,
