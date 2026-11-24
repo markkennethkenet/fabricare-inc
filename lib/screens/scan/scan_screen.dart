@@ -290,7 +290,6 @@ class _ScanScreenState extends State<ScanScreen> {
       final failures = quality
           .where((q) => (q['quality'] as Map)['passed'] != true)
           .toList();
-      var override = false;
       // A photo without fabric (a wall, a cupboard) cannot be scanned at all.
       final noFabric =
           failures.where((q) => (q['quality'] as Map)['no_fabric'] == true);
@@ -313,27 +312,25 @@ class _ScanScreenState extends State<ScanScreen> {
         return;
       }
       if (failures.isNotEmpty) {
+        // Dark, overexposed or blurry photos are never analyzed: the user retakes them.
         setState(() => _stage = null);
-        override = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                      icon: const Icon(Icons.photo_camera_outlined),
-                      title: const Text('Review photo quality'),
-                      content: Text(failures
-                          .map((q) =>
-                              "${_viewTitle(q['view'] as String)}: ${(q['quality'] as Map)['reason']}")
-                          .join('\n\n')),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Retake photos')),
-                        TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Continue anyway')),
-                      ],
-                    )) ??
-            false;
-        if (!override || !mounted) return;
+        await showDialog<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  title: const Text('Retake the photo'),
+                  content: Text([
+                    for (final q in failures)
+                      "${_viewTitle(q['view'] as String)}: ${(q['quality'] as Map)['reason']}",
+                    'Dark, too bright or blurry photos cannot be analyzed.',
+                  ].join('\n\n')),
+                  actions: [
+                    FilledButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Retake photos')),
+                  ],
+                ));
+        return;
       }
       setState(() {
         _stage = _ScanStage.analysis;
@@ -341,9 +338,7 @@ class _ScanScreenState extends State<ScanScreen> {
       });
       step = 'analyzing the photos';
       final response = await api.analyzeImages(images,
-          allowLowQuality: override,
-          modelType: _modelType,
-          userInputs: _userInputs);
+          modelType: _modelType, userInputs: _userInputs);
       if (!mounted) return;
       final canAddView =
           images.length == _requestedViews && _requestedViews < 3;
@@ -409,7 +404,6 @@ class _ScanScreenState extends State<ScanScreen> {
       }
       if (response.json['fabric_needs_confirmation'] == true &&
           !response.fabricUnsupported &&
-          !override &&
           canAddView) {
         final nextView = _views[_requestedViews];
         final guess =

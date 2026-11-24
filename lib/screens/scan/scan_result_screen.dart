@@ -102,33 +102,29 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       final failures = quality
           .where((check) => (check['quality'] as Map)['passed'] != true)
           .toList();
-      var allowLowQuality = false;
       if (failures.isNotEmpty) {
+        // Dark, overexposed or blurry photos are never analyzed: the user retakes them.
         if (!mounted) return;
-        allowLowQuality = await showDialog<bool>(
-              context: context,
-              builder: (dialog) => AlertDialog(
-                icon: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Review photo quality'),
-                content: Text(failures
-                    .map((check) =>
-                        '${_viewName(check['view'] as String)}: ${(check['quality'] as Map)['reason']}')
-                    .join('\n\n')),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(dialog, false),
-                      child: const Text('Retake')),
-                  TextButton(
-                      onPressed: () => Navigator.pop(dialog, true),
-                      child: const Text('Continue anyway')),
-                ],
-              ),
-            ) ??
-            false;
-        if (!allowLowQuality) return;
+        await showDialog<void>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+            icon: const Icon(Icons.photo_camera_outlined),
+            title: const Text('Retake the photo'),
+            content: Text([
+              for (final check in failures)
+                '${_viewName(check['view'] as String)}: ${(check['quality'] as Map)['reason']}',
+              'Dark, too bright or blurry photos cannot be analyzed.',
+            ].join('\n\n')),
+            actions: [
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialog),
+                  child: const Text('Retake')),
+            ],
+          ),
+        );
+        return;
       }
       final response = await api.analyzeImages(images,
-          allowLowQuality: allowLowQuality,
           modelType: result.analysis['model_type'] as String?,
           userInputs: result.userInputs);
       final saved =

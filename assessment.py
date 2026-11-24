@@ -239,6 +239,8 @@ LABEL_FIBERS = {
     "rayon": None, "viscose": None, "modal": None, "lyocell": None, "tencel": None, "acetate": None,
     "triacetate": None, "bamboo": None, "hemp": None, "ramie": None, "jute": None, "polypropylene": None,
     "olefin": None, "leather": None, "suede": None,
+    # Philippine fibers and fabrics outside the six supported ones.
+    "abaca": None, "piña": None, "pina": None, "pineapple": None, "jusi": None, "sinamay": None, "banana": None,
 }
 LABEL_TOKEN = re.compile(r"(\d+(?:\.\d+)?)\s*%|\b(" + "|".join(sorted(LABEL_FIBERS, key=len, reverse=True)) + r")\b")
 

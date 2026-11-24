@@ -51,6 +51,9 @@ class AssessmentTests(unittest.TestCase):
             "Shell: 100% polyester; Lining: 100% nylon": ("polyester", 100.0),
             "Merino wool 100%": ("wool", 100.0),
             "95% cotton 5% elastane": ("cotton", 95.0),
+            "100% Abaca": ("abaca", 100.0),
+            "70% piña, 30% silk": ("piña", 70.0),
+            "jusi": ("jusi", None),
         }
         for text, (fiber, percent) in cases.items():
             with self.subTest(text=text):

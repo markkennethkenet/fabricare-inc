@@ -199,16 +199,20 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotIn('path', body['per_image'][0])
         self.assertEqual(self.fabric_mock.call_count, 2)
 
-    def test_quality_preflight_and_explicit_override(self):
+    def test_dark_or_blurry_photos_are_rejected_without_override(self):
         result = self.client.post('/quality', data={'images': [self.photo(True)], 'views': '["front"]'})
         self.assertEqual(result.status_code, 200)
         self.assertFalse(result.get_json()['per_image'][0]['quality']['passed'])
         self.fabric_mock.assert_not_called()
-        response = self.client.post('/analyze', data={'images': [self.photo(True)], 'views': '["front"]'})
-        self.assertEqual(response.status_code, 422)
+        for extra in ({}, {'allow_low_quality': 'true'}):
+            with self.subTest(**extra):
+                response = self.client.post('/analyze', data={
+                    'images': [self.photo(True)], 'views': '["front"]', **extra})
+                self.assertEqual(response.status_code, 422)
+                self.assertTrue(response.get_json()['quality_rejected'])
+        hybrid = self.client.post('/predict/hybrid', data={'image': self.photo(True), 'allow_low_quality': 'true'})
+        self.assertEqual(hybrid.status_code, 422)
         self.fabric_mock.assert_not_called()
-        override = self.client.post('/analyze', data={'images': [self.photo(True)], 'views': '["front"]', 'allow_low_quality': 'true'})
-        self.assertEqual(override.status_code, 200)
 
     def test_bad_inputs(self):
         self.assertEqual(self.client.post('/analyze').status_code, 400)

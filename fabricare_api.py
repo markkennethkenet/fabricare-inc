@@ -612,9 +612,11 @@ def analyze_upload(*, hybrid):
                                          "Retake it with the camera pointed at the garment's fabric.",
                                 "no_fabric": True, "per_image": [public_image(r) for r in records]}), 422
             failed_quality = any(not r["quality"]["passed"] for r in records)
-            if failed_quality and (hybrid or not legacy) and request.form.get("allow_low_quality") != "true":
-                return jsonify({"error": "Review image quality and retake or continue anyway.",
-                                "quality_requires_confirmation": True,
+            if failed_quality and (hybrid or not legacy):
+                # Dark, overexposed or blurry photos are never analyzed (outline defense panel); allow_low_quality is
+                # no longer honoured. Only the old single-image /analyze form keeps its legacy behaviour.
+                return jsonify({"error": "Retake the photo: it is too dark, too bright or blurry to analyze.",
+                                "quality_rejected": True,
                                 "per_image": [public_image(r) for r in records]}), 422
             model_type, model = selected_classifier()
             detections = []
