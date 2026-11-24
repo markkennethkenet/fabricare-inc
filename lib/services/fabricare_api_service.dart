@@ -27,6 +27,17 @@ class AnalyzeResponse {
       ? Map<String, dynamic>.from(json['fabric'] as Map)
       : const {};
 
+  /// The API's check for fabrics outside the six supported ones.
+  Map<String, dynamic> get unsupportedFabric =>
+      json['unsupported_fabric'] is Map
+          ? Map<String, dynamic>.from(json['unsupported_fabric'] as Map)
+          : const {};
+
+  /// The entered fiber content names a fiber the app does not support.
+  bool get fabricUnsupported =>
+      unsupportedFabric['detected'] == true &&
+      unsupportedFabric['trigger'] == 'fiber_label';
+
   /// The fabric score is below the model's threshold or the fabric is unknown.
   /// Such a scan is not saved; the user is asked for a better photo instead.
   bool get fabricRejected =>

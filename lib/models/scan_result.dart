@@ -45,9 +45,19 @@ class ScanResult {
   String get imageAssetFallback => fabricType;
   String get fabricType => analysis['fabric_type'] as String? ?? 'Unknown';
   bool get fabricUncertain => fabricType == 'uncertain';
-  String get fabricLabel => fabricUncertain || fabricType.isEmpty
-      ? 'Fabric uncertain'
-      : fabricType[0].toUpperCase() + fabricType.substring(1);
+
+  /// The API's check for fabrics outside the six supported ones.
+  Map<String, dynamic> get unsupportedFabric => section('unsupported_fabric');
+
+  /// The entered fiber content names a fiber the app does not support.
+  bool get fabricUnsupported =>
+      unsupportedFabric['detected'] == true &&
+      unsupportedFabric['trigger'] == 'fiber_label';
+  String get fabricLabel => fabricUnsupported
+      ? 'Unsupported fabric type'
+      : fabricUncertain || fabricType.isEmpty
+          ? 'Fabric uncertain'
+          : fabricType[0].toUpperCase() + fabricType.substring(1);
   int? get healthScore => (analysis['health_score'] as num?)?.round();
   String? get healthGrade => analysis['health_grade'] as String?;
 

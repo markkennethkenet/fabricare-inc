@@ -41,6 +41,69 @@ class AssessmentTests(unittest.TestCase):
         dated = assess("cotton", [], {"purchase_date": "2024-11-16"}, **sure)["lifespan"]
         self.assertEqual(new_cotton["remaining_months"] - dated["remaining_months"], 24)
 
+    def test_fiber_content_is_read_from_common_label_formats(self):
+        from assessment import label_fibers, main_label_fiber
+
+        cases = {
+            "80% nylon, 20% spandex": ("nylon", 80.0),
+            "Nylon 80% Spandex 20%": ("nylon", 80.0),
+            "Nylon/Spandex": ("nylon", None),
+            "Shell: 100% polyester; Lining: 100% nylon": ("polyester", 100.0),
+            "Merino wool 100%": ("wool", 100.0),
+            "95% cotton 5% elastane": ("cotton", 95.0),
+        }
+        for text, (fiber, percent) in cases.items():
+            with self.subTest(text=text):
+                main = main_label_fiber(label_fibers(text))
+                self.assertEqual((main[0], main[1]), (fiber, percent))
+        self.assertIsNone(main_label_fiber(label_fibers("see care tag")))
+
+    def test_unsupported_fabric_is_flagged_from_the_fiber_label(self):
+        sure = {"today": date(2026, 11, 16), "fabric_confidence": 92, "fabric_threshold": 60}
+        result = assess("polyester", [], {"composition": "80% nylon, 20% spandex"}, **sure)
+        flag = result["unsupported_fabric"]
+        self.assertTrue(flag["detected"])
+        self.assertEqual((flag["trigger"], flag["fiber"], flag["title"]), ("fiber_label", "nylon",
+                                                                            "Unsupported fabric type"))
+        self.assertIn("80% nylon", flag["message"])
+        # No fabric-specific baseline or advice: the survey mean of 5.2 years is used.
+        self.assertTrue(result["fabric_needs_confirmation"])
+        self.assertTrue(any("fabric unconfirmed" in f["factor"] for f in result["lifespan"]["factors"]))
+
+    def test_supported_blend_and_confident_photo_are_not_flagged(self):
+        sure = {"today": date(2026, 11, 16), "fabric_confidence": 92, "fabric_threshold": 60}
+        blend = assess("cotton", [], {"composition": "95% cotton, 5% spandex"}, **sure)
+        self.assertFalse(blend["unsupported_fabric"]["detected"])
+        self.assertIn("mainly cotton with spandex", blend["unsupported_fabric"]["note"])
+        self.assertFalse(blend["fabric_needs_confirmation"])
+        plain = assess("cotton", [], **sure)["unsupported_fabric"]
+        self.assertEqual((plain["detected"], plain["note"]), (False, None))
+
+    def test_low_photo_score_may_mean_an_unsupported_fabric(self):
+        weak = assess("polyester", [], fabric_confidence=41, fabric_threshold=60)["unsupported_fabric"]
+        self.assertEqual((weak["detected"], weak["trigger"]), (True, "low_confidence"))
+        self.assertIn("nylon or spandex", weak["message"])
+        # A supported fiber on the label answers the question, whatever the photo score.
+        labelled = assess("polyester", [], {"composition": "100% polyester"}, fabric_confidence=41,
+                          fabric_threshold=60)["unsupported_fabric"]
+        self.assertFalse(labelled["detected"])
+
+    def test_wear_and_washing_use_the_survey_regression_coefficients(self):
+        sure = {"today": date(2026, 11, 16), "fabric_confidence": 95}
+
+        def months(use, wash=None):
+            inputs = {"condition": "new", "use_frequency": use, **({"washing_frequency": wash} if wash else {})}
+            return assess("cotton", [], inputs, **sure)["lifespan"]["remaining_months"]
+
+        # -0.018 years per extra wear per year: several times a week (156) against weekly (52).
+        self.assertAlmostEqual(months("several_times_a_week") - months("weekly"), -0.018 * 104 * 12, delta=1)
+        # Daily wear is past the survey's highest category and is counted as several times a week.
+        self.assertEqual(months("daily"), months("several_times_a_week"))
+        # +0.792 years per laundering bracket: about 4 wears per wash (bracket 2) against every wear (bracket 0).
+        self.assertAlmostEqual(months("weekly", "monthly") - months("weekly", "weekly"), 2 * 0.792 * 12, delta=1)
+        # Washing after every wear sits 1.128 brackets below the survey's average garment.
+        self.assertAlmostEqual(months("weekly", "weekly") - months("weekly"), -0.792 * 1.128 * 12, delta=1)
+
     def test_damage_lowers_health_and_caps_lifespan_after_a_confirmed_opening(self):
         today = date(2026, 11, 16)
         hole = [{"type": "hole", "confidence": 90, "area_ratio": 0.03}]

@@ -1,6 +1,6 @@
 """Versioned condition and care rules for the scan and damage-review endpoints."""
 import json
-import math
+import re
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
@@ -23,12 +23,22 @@ SURVEY_TOTAL_YEARS = 5.2
 SURVEY_CURRENT_AGE_YEARS = 2.6
 COTTON_TOTAL_YEARS = SURVEY_TOTAL_YEARS - (0.168 * 1.2 + 0.145 * 5.5 / 12 + 0.029 * 9.7 / 12)
 FIBRE_OFFSET_YEARS = {"cotton": 0.0, "denim": 0.0, "linen": 0.0, "polyester": 5.5 / 12, "silk": 2.2, "wool": 1.2}
-# Ten more wears per year shortened lifespan by about two months; washing less often than every 30 wears added up
-# to 4.8 years compared with washing after every wear (section 4.1).
 WEARS_PER_YEAR = {"rarely": 12, "weekly": 52, "several_times_a_week": 156, "daily": 312}
 WASHES_PER_WEEK = {"rarely": 1 / 12, "monthly": 0.25, "weekly": 1.0, "multiple_per_week": 3.0}
+# Use effects are the unstandardised coefficients (B) of the study's final lifespan-in-years model (Block 4):
+# each extra wear per year changes lifespan by -0.018 years (10 wears = about 2 months), and each higher laundering
+# bracket adds 0.792 years (bracket 6 = 4.8 years longer than washing after every wear). The laundering brackets are
+# 0 = after every wear, 1 = 2-3 wears, 2 = 4-5, 3 = 6-10, 4 = 11-19, 5 = 20-29 and 6 = 30 or more wears.
+YEARS_PER_WEAR_PER_YEAR = -0.018
+YEARS_PER_LAUNDERING_BRACKET = 0.792
+LAUNDERING_BRACKET_STARTS = (2, 4, 6, 11, 20, 30)  # wears per wash at which brackets 1-6 begin
+# The effects are measured from the survey's average garment, which the 5.2-year mean describes (Table 2, all
+# countries): "once a week" is the median typical wear frequency, and the mean laundering bracket is 1.128
+# (43.7% every wear, 27.6% 2-3, 15.3% 4-5, 6.3% 6-10, 2.6% 11-19, 1.7% 20-29, 2.8% 30 or more).
 REFERENCE_WEARS_PER_YEAR = 52
-REFERENCE_WEARS_PER_WASH = 3
+REFERENCE_LAUNDERING_BRACKET = 0.276 + 2 * 0.153 + 3 * 0.063 + 4 * 0.026 + 5 * 0.017 + 6 * 0.028
+# The survey's highest wear category was "several times a week", so the wear effect is not extended past it.
+SURVEY_MAX_WEARS_PER_YEAR = WEARS_PER_YEAR["several_times_a_week"]
 # The study's model explains about 22% of the variation in lifespan, so estimates are shown as a wide range.
 RANGE_LOW, RANGE_HIGH = 0.6, 1.4
 # FabriCare assumptions, not study figures: how visible damage shortens the remaining estimate.
@@ -218,6 +228,80 @@ FABRIC_CONTEXT = {
 }
 RESTRICTED_WASH = {"professional_only", "dry_clean_only", "do_not_wash"}
 
+SUPPORTED_FABRICS_TEXT = "cotton, denim, linen, polyester, silk and wool"
+# Fiber words on care labels: the supported fabric each counts as, or None when the app has no model for it.
+LABEL_FIBERS = {
+    "cotton": "cotton", "denim": "denim", "linen": "linen", "flax": "linen", "polyester": "polyester",
+    "silk": "silk", "wool": "wool", "merino": "wool", "lambswool": "wool", "cashmere": "wool",
+    "nylon": None, "polyamide": None, "spandex": None, "elastane": None, "lycra": None, "acrylic": None,
+    "rayon": None, "viscose": None, "modal": None, "lyocell": None, "tencel": None, "acetate": None,
+    "triacetate": None, "bamboo": None, "hemp": None, "ramie": None, "jute": None, "polypropylene": None,
+    "olefin": None, "leather": None, "suede": None,
+}
+LABEL_TOKEN = re.compile(r"(\d+(?:\.\d+)?)\s*%|\b(" + "|".join(sorted(LABEL_FIBERS, key=len, reverse=True)) + r")\b")
+
+
+def label_fibers(composition):
+    """Fibers named in the entered fiber content, in label order, as (fiber, percent or None, supported fabric).
+
+    A percentage belongs to the fiber right after it ("80% nylon") or, failing that, right before it ("nylon 80%").
+    """
+    entries, waiting, last = [], None, None
+    for number, word in LABEL_TOKEN.findall(composition.casefold()):
+        if number:
+            if last is not None:
+                last[1], last = float(number), None
+            else:
+                waiting = float(number)
+            continue
+        fabric = LABEL_FIBERS[word]
+        entry = [fabric or word, waiting, fabric]
+        entries.append(entry)
+        last, waiting = (entry if waiting is None else None), None
+    merged = {}
+    for name, percent, fabric in entries:
+        if name in merged:
+            if percent is not None:
+                merged[name][1] = (merged[name][1] or 0) + percent
+        else:
+            merged[name] = [name, percent, fabric]
+    return [tuple(entry) for entry in merged.values()]
+
+
+def main_label_fiber(fibers):
+    """The fiber with the largest share, or the first one listed when the label gives no percentages."""
+    if not fibers:
+        return None
+    if any(percent is not None for _, percent, _ in fibers):
+        return max(fibers, key=lambda fiber: -1 if fiber[1] is None else fiber[1])
+    return fibers[0]
+
+
+def fabric_support(composition, fabric_type, fabric_confidence, fabric_threshold=None):
+    """Flags a garment that is, or may be, outside the six fabrics the app identifies.
+
+    The entered fiber content decides when it names a fiber; otherwise a photo score below the review threshold
+    means the garment may be an unsupported fabric, because the classifier only knows the six supported ones.
+    """
+    fibers = label_fibers(composition)
+    main = main_label_fiber(fibers)
+    if main is not None and main[2] is None:
+        share = f"{main[1]:g}% " if main[1] is not None else ""
+        return {"detected": True, "trigger": "fiber_label", "fiber": main[0], "title": "Unsupported fabric type",
+                "message": f"The fiber content you entered is mainly {share}{main[0]}, which is not one of the six "
+                           f"supported fabrics ({SUPPORTED_FABRICS_TEXT}). Fabric-specific care and lifespan are "
+                           "not applied; follow the garment's care label."}
+    if main is not None:
+        others = [name for name, _, fabric in fibers if fabric is None]
+        note = (f"Blend: mainly {main[0]} with {', '.join(others)}. The main fiber is supported." if others else None)
+        return {"detected": False, "trigger": None, "fiber": main[0], "note": note}
+    if isinstance(fabric_confidence, (int, float)) and fabric_confidence < review_threshold(fabric_threshold):
+        return {"detected": True, "trigger": "low_confidence", "fiber": None, "title": "Possibly unsupported fabric",
+                "message": f"The photo does not clearly match any of the six supported fabrics "
+                           f"({SUPPORTED_FABRICS_TEXT}). It may be an unsupported fabric such as nylon or spandex. "
+                           "Enter the fiber content from the care label, or retake the photo."}
+    return {"detected": False, "trigger": None, "fiber": None, "note": None}
+
 
 def guidance(action, reason, selected_because, refs, restriction=""):
     return {"action": action, "reason": reason, "selected_because": selected_because, "restriction": restriction,
@@ -233,10 +317,14 @@ def care_for(fabric_type, fabric_confidence, inputs, condition, fabric_threshold
                   if kind != "denim" and composition in {kind, f"100% {kind}"}), None)
     if composition == "100% merino wool":
         fiber = "wool"
+    main = main_label_fiber(label_fibers(composition))
+    if fiber is None and main is not None and main[2] not in (None, "denim"):
+        fiber = main[2]  # a blend's main fiber, e.g. "95% cotton, 5% spandex"
+    unsupported_label = main is not None and main[2] is None
     verified_wool = composition in {"100% wool", "100% merino wool"}
     predicted = fabric_type.casefold()
     needs_confirmation = (fabric_confidence is None or fabric_confidence < review_threshold(fabric_threshold)
-                          or condition["quality_limited"] or predicted not in FABRIC_CONTEXT)
+                          or condition["quality_limited"] or predicted not in FABRIC_CONTEXT or unsupported_label)
     # A fibre the user entered counts; a photo guess that needs confirmation chooses no fabric-specific advice.
     material = fiber or (None if needs_confirmation else predicted)
     conflicts = wash == "conflicting" or (wash == "dry_clean_only" and label["professional"] == "do_not_dry_clean")
@@ -426,20 +514,19 @@ def lifespan_estimate(fabric_type, condition, inputs, today=None):
                 "effect_months": round(total * 12), "source": "D"}]
     wears = WEARS_PER_YEAR.get(inputs["use_frequency"])
     if wears is not None:
-        months = max(-24.0, min(12.0, -2.0 * (wears - REFERENCE_WEARS_PER_YEAR) / 10))
-        total += months / 12
-        factors.append({"factor": f"Wear frequency: {inputs['use_frequency'].replace('_', ' ')}",
-                        "effect_months": round(months), "source": "D"})
+        years = YEARS_PER_WEAR_PER_YEAR * (min(wears, SURVEY_MAX_WEARS_PER_YEAR) - REFERENCE_WEARS_PER_YEAR)
+        total += years
+        capped = " (counted as several times a week, the survey's highest category)" \
+            if wears > SURVEY_MAX_WEARS_PER_YEAR else ""
+        factors.append({"factor": f"Wear frequency: {inputs['use_frequency'].replace('_', ' ')}{capped}",
+                        "effect_months": round(years * 12), "source": "D"})
     washes = WASHES_PER_WEEK.get(inputs["washing_frequency"])
     if wears is not None and washes is not None:
-        per_wash = max(1.0, (wears / 52) / washes)
-
-        def washing_benefit(value):
-            return 4.8 * math.log(min(value, 30)) / math.log(30)
-
-        years = max(-2.0, min(2.0, washing_benefit(per_wash) - washing_benefit(REFERENCE_WEARS_PER_WASH)))
+        per_wash = max(1, round((wears / 52) / washes))
+        bracket = sum(per_wash >= start for start in LAUNDERING_BRACKET_STARTS)
+        years = YEARS_PER_LAUNDERING_BRACKET * (bracket - REFERENCE_LAUNDERING_BRACKET)
         total += years
-        factors.append({"factor": f"About {per_wash:.0f} wear(s) between washes", "effect_months": round(years * 12),
+        factors.append({"factor": f"About {per_wash} wear(s) between washes", "effect_months": round(years * 12),
                         "source": "D"})
     if inputs["purchase_date"]:
         age = max(0.0, (today - date.fromisoformat(inputs["purchase_date"])).days / 365.25)
@@ -565,6 +652,7 @@ def assess(fabric_type, detections, user_inputs=None, today=None, *, fabric_conf
     return {
         "methodology_version": METHOD_VERSION,
         "fabric_needs_confirmation": needs_confirmation,
+        "unsupported_fabric": fabric_support(inputs["composition"], fabric_type, fabric_confidence, fabric_threshold),
         "condition_assessment": condition,
         "lifespan": lifespan,
         "six_month_outlook": outlook,

@@ -23,6 +23,31 @@ void main() {
     expect(uncertain.rejectionMessage, contains('could not identify'));
   });
 
+  test('a fiber label outside the six fabrics is flagged unsupported', () {
+    final nylon = AnalyzeResponse({
+      'fabric_type': 'polyester',
+      'fabric_confidence': 91.0,
+      'fabric': {'review_required': false, 'threshold_percent': 60},
+      'unsupported_fabric': {
+        'detected': true,
+        'trigger': 'fiber_label',
+        'fiber': 'nylon',
+        'message': 'The fiber content you entered is mainly 80% nylon.',
+      },
+    });
+    expect(nylon.fabricUnsupported, isTrue);
+    // A low photo score alone only says the fabric may be unsupported.
+    final weak = AnalyzeResponse({
+      'fabric_type': 'polyester',
+      'fabric_confidence': 41.0,
+      'fabric': {'review_required': true, 'threshold_percent': 60},
+      'unsupported_fabric': {'detected': true, 'trigger': 'low_confidence'},
+    });
+    expect(weak.fabricUnsupported, isFalse);
+    expect(weak.fabricRejected, isTrue);
+    expect(scan('cotton', 92.4).fabricUnsupported, isFalse);
+  });
+
   test('a fabric at or above the threshold is kept', () {
     expect(scan('cotton', 60).fabricRejected, isFalse);
     expect(scan('cotton', 92.4).fabricRejected, isFalse);

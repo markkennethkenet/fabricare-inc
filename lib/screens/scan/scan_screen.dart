@@ -347,7 +347,32 @@ class _ScanScreenState extends State<ScanScreen> {
       if (!mounted) return;
       final canAddView =
           images.length == _requestedViews && _requestedViews < 3;
-      if (response.fabricRejected) {
+      final unsupported = response.unsupportedFabric;
+      if (response.fabricUnsupported) {
+        // The fiber label names a fabric outside the six supported ones; more photos cannot change that.
+        setState(() => _stage = null);
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.block_rounded),
+            title: const Text('UNSUPPORTED FABRIC TYPE'),
+            content: Text([
+              unsupported['message'] as String? ??
+                  'This fabric is not one of the six supported fabrics.',
+              'Visible damage and the health score are still shown.',
+            ].join('\n\n')),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('See result')),
+            ],
+          ),
+        );
+        if (!mounted || proceed != true) return;
+      } else if (response.fabricRejected) {
         // Below the fabric threshold: ask for a better photo and save nothing.
         final nextView = canAddView ? _views[_requestedViews] : null;
         setState(() => _stage = null);
@@ -358,6 +383,9 @@ class _ScanScreenState extends State<ScanScreen> {
             title: const Text('Fabric not identified'),
             content: Text([
               response.rejectionMessage,
+              if (unsupported['detected'] == true &&
+                  unsupported['message'] is String)
+                unsupported['message'] as String,
               'Retake the photo in brighter, even light, close enough to show the weave.',
               if (nextView == 'back')
                 'Or add the back of the same garment.'
@@ -380,6 +408,7 @@ class _ScanScreenState extends State<ScanScreen> {
         return;
       }
       if (response.json['fabric_needs_confirmation'] == true &&
+          !response.fabricUnsupported &&
           !override &&
           canAddView) {
         final nextView = _views[_requestedViews];

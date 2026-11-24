@@ -482,6 +482,15 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
               threshold:
                   (fabric['threshold_percent'] as num?)?.toDouble() ?? 85,
             ),
+            if (result.unsupportedFabric case final flag
+                when flag['detected'] == true && flag['message'] is String)
+              SectionCard(
+                title: result.fabricUnsupported
+                    ? 'UNSUPPORTED FABRIC TYPE'
+                    : (flag['title'] as String? ?? 'Possibly unsupported fabric'),
+                icon: Icons.block_rounded,
+                child: Text(flag['message'] as String),
+              ),
             _wholeGarmentCard(),
             _careCards(),
             SectionCard(

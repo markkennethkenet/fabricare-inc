@@ -32,6 +32,13 @@ class FabricResultHero extends StatelessWidget {
 
   ({String label, Color color, IconData icon}) get _level {
     final value = score;
+    if (result.fabricUnsupported) {
+      return (
+        label: 'Unsupported fabric type',
+        color: AppColors.danger,
+        icon: Icons.block_rounded
+      );
+    }
     if (result.fabricUncertain) {
       return (
         label: 'Uncertain result',
@@ -85,8 +92,11 @@ class FabricResultHero extends StatelessWidget {
     final level = _level;
     final front =
         result.images.where((photo) => photo.view == 'front').firstOrNull;
-    final name =
-        result.fabricUncertain ? 'Uncertain' : displayName(result.fabricType);
+    final name = result.fabricUnsupported
+        ? 'Unsupported'
+        : result.fabricUncertain
+            ? 'Uncertain'
+            : displayName(result.fabricType);
     final alternatives = _alternatives;
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -175,7 +185,9 @@ class FabricResultHero extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          if (score != null && !result.fabricUncertain) ...[
+          if (score != null &&
+              !result.fabricUncertain &&
+              !result.fabricUnsupported) ...[
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
